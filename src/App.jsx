@@ -407,38 +407,6 @@ function App() {
         />
         )}
 
-        <button
-          onClick={handleClick}
-          disabled={loading}
-          style={{
-            width: '100%',
-            padding: '14px 24px',
-            fontSize: '16px',
-            fontWeight: '600',
-            color: 'white',
-            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-            border: 'none',
-            borderRadius: '12px',
-            cursor: loading ? 'not-allowed' : 'pointer',
-            transition: 'all 0.3s ease',
-            boxShadow: '0 4px 15px rgba(102, 126, 234, 0.4)',
-            marginBottom: '25px',
-            opacity: loading ? 0.7 : 1
-          }}
-          onMouseOver={(e) => {
-            if (!loading) {
-              e.target.style.boxShadow = '0 6px 20px rgba(102, 126, 234, 0.6)'
-              e.target.style.transform = 'translateY(-2px)'
-            }
-          }}
-          onMouseOut={(e) => {
-            e.target.style.boxShadow = '0 4px 15px rgba(102, 126, 234, 0.4)'
-            e.target.style.transform = 'translateY(0)'
-          }}
-        >
-          {loading ? 'Laddar...' : questionType === 'bmi' ? 'Beräkna BMI' : questionType === 'age' ? 'Beräkna ålder' : 'Få svar'}
-        </button>
-
         {isBmiQuestion && (
           <div style={{
             background: '#f8f9ff',
@@ -553,6 +521,38 @@ function App() {
             )}
           </div>
         )}
+
+        <button
+          onClick={handleClick}
+          disabled={loading}
+          style={{
+            width: '100%',
+            padding: '14px 24px',
+            fontSize: '16px',
+            fontWeight: '600',
+            color: 'white',
+            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+            border: 'none',
+            borderRadius: '12px',
+            cursor: loading ? 'not-allowed' : 'pointer',
+            transition: 'all 0.3s ease',
+            boxShadow: '0 4px 15px rgba(102, 126, 234, 0.4)',
+            marginBottom: '25px',
+            opacity: loading ? 0.7 : 1
+          }}
+          onMouseOver={(e) => {
+            if (!loading) {
+              e.target.style.boxShadow = '0 6px 20px rgba(102, 126, 234, 0.6)'
+              e.target.style.transform = 'translateY(-2px)'
+            }
+          }}
+          onMouseOut={(e) => {
+            e.target.style.boxShadow = '0 4px 15px rgba(102, 126, 234, 0.4)'
+            e.target.style.transform = 'translateY(0)'
+          }}
+        >
+          {loading ? 'Laddar...' : questionType === 'bmi' ? 'Beräkna BMI' : questionType === 'age' ? 'Beräkna ålder' : 'Få svar'}
+        </button>
 
         {!isBmiQuestion && !isAgeQuestion && answer && (
           <div style={{
