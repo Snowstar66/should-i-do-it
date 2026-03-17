@@ -127,11 +127,6 @@ function App() {
   }
 
   const handleClick = () => {
-    if (!question) {
-      setAnswer("Skriv en fråga först 🙂")
-      return
-    }
-
     if (questionType === 'bmi') {
       calculateBMI()
       return
@@ -139,6 +134,11 @@ function App() {
 
     if (questionType === 'age') {
       calculateAge()
+      return
+    }
+
+    if (!question) {
+      setAnswer("Skriv en fråga först 🙂")
       return
     }
 
@@ -457,7 +457,7 @@ function App() {
               <input
                 type="number"
                 value={weight}
-                onChange={(e) => setWeight(parseFloat(e.target.value))}
+                onChange={(e) => setWeight(e.target.value === '' ? '' : parseFloat(e.target.value))}
                 placeholder="Enter weight"
                 style={{
                   width: '100%',
@@ -481,7 +481,7 @@ function App() {
               <input
                 type="number"
                 value={height}
-                onChange={(e) => setHeight(parseFloat(e.target.value))}
+                onChange={(e) => setHeight(e.target.value === '' ? '' : parseFloat(e.target.value))}
                 placeholder="Enter height"
                 style={{
                   width: '100%',
