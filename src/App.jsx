@@ -45,18 +45,6 @@ function App() {
     return () => clearInterval(timer)
   }, [])
 
-  const responses = {
-    positive: ["Ja", "Absolut", "Kör!"],
-    negative: ["Nej", "Ingen chans", "Tveksamt..."],
-    neutral: ["Fråga igen senare"]
-  }
-
-  const getAnswerColor = (response) => {
-    if (responses.positive.includes(response)) return 'green'
-    if (responses.negative.includes(response)) return 'red'
-    return 'black'
-  }
-
   const calculateBMI = () => {
     if (!weight || !height) {
       alert("Vänligen fyll i både vikt och längd")
