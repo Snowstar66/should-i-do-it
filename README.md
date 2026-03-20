@@ -8,14 +8,29 @@ The app now has a `Film` category that can show:
 - Rotten Tomatoes rating
 - where the movie is available to stream in Sweden
 
-To enable that feature, create a `.env.local` file in the project root and add:
+### Deploy on Vercel with private API keys
+
+The movie feature is now designed to use a Vercel Function at `/api/movie`, which keeps your keys on the server instead of exposing them in the browser bundle.
+
+In Vercel, add these Environment Variables in your project settings:
+
+```bash
+OMDB_API_KEY=your_omdb_api_key
+TMDB_API_KEY=your_tmdb_api_key
+```
+
+After adding or changing them, redeploy the project.
+
+### Local development
+
+If you run the app locally with plain `npm run dev`, the movie feature can fall back to browser-side keys from `.env.local`:
 
 ```bash
 VITE_OMDB_API_KEY=your_omdb_api_key
 VITE_TMDB_API_KEY=your_tmdb_api_key
 ```
 
-You can also copy the included `.env.example` file and rename it to `.env.local`.
+You can copy the included `.env.example` file and fill in only the values you need.
 
 API sources used by the movie category:
 

@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react'
 
-const OMDB_API_KEY = import.meta.env.VITE_OMDB_API_KEY?.trim()
-const TMDB_API_KEY = import.meta.env.VITE_TMDB_API_KEY?.trim()
+const LOCAL_OMDB_API_KEY = import.meta.env.VITE_OMDB_API_KEY?.trim()
+const LOCAL_TMDB_API_KEY = import.meta.env.VITE_TMDB_API_KEY?.trim()
 const SPOT_PRICE_AREAS = ['SE1', 'SE2', 'SE3', 'SE4']
 const SPOT_PRICE_TIME_ZONE = 'Europe/Stockholm'
 const SPOT_PRICE_API_BASE_URL = 'https://www.elprisetjustnu.se/api/v1/prices'
+const MOVIE_API_PATH = '/api/movie'
 const TMDB_API_BASE_URL = 'https://api.themoviedb.org/3'
 const MOVIE_STREAMING_REGION = 'SE'
 const WIKIPEDIA_SEARCH_LANGUAGES = ['sv', 'en']
@@ -262,6 +263,23 @@ const mapOmdbMovieResponse = (response, fallbackTitle) => ({
   rottenTomatoesRating: response?.Ratings?.find((rating) => rating?.Source === 'Rotten Tomatoes')?.Value ?? null
 })
 
+const fetchMovieDetailsFromServer = async (title) => {
+  try {
+    const params = new URLSearchParams({ title })
+    const response = await fetch(`${MOVIE_API_PATH}?${params.toString()}`)
+    const contentType = response.headers.get('content-type') ?? ''
+
+    if (!contentType.includes('application/json')) {
+      return null
+    }
+
+    return response.json()
+  } catch (error) {
+    console.error('Movie API endpoint unavailable, falling back to local browser fetch:', error)
+    return null
+  }
+}
+
 const fetchMovieTitleHintsFromWikipedia = async (title) => {
   const hints = []
   const queryVariants = getMovieSearchVariants(title).slice(0, 4)
@@ -332,7 +350,7 @@ const fetchOmdbMovieResponse = async (params) => {
 }
 
 const fetchMovieRatingsFromOmdb = async (title) => {
-  if (!OMDB_API_KEY) {
+  if (!LOCAL_OMDB_API_KEY) {
     return null
   }
 
@@ -343,7 +361,7 @@ const fetchMovieRatingsFromOmdb = async (title) => {
 
   for (const titleHint of titleHints) {
     const exactMatchParams = new URLSearchParams({
-      apikey: OMDB_API_KEY,
+      apikey: LOCAL_OMDB_API_KEY,
       t: titleHint,
       type: 'movie',
       plot: 'short',
@@ -362,7 +380,7 @@ const fetchMovieRatingsFromOmdb = async (title) => {
 
   for (const variant of searchVariants) {
     const searchParams = new URLSearchParams({
-      apikey: OMDB_API_KEY,
+      apikey: LOCAL_OMDB_API_KEY,
       s: variant,
       type: 'movie',
       r: 'json'
@@ -390,7 +408,7 @@ const fetchMovieRatingsFromOmdb = async (title) => {
   }
 
   const detailsParams = new URLSearchParams({
-    apikey: OMDB_API_KEY,
+    apikey: LOCAL_OMDB_API_KEY,
     i: bestMatch.imdbID,
     plot: 'short',
     r: 'json'
@@ -420,7 +438,7 @@ const pickBestTmdbMovieMatch = (results, title, year) => results
 
 const fetchTmdbMovieSearchResults = async (title, year, language) => {
   const searchParams = new URLSearchParams({
-    api_key: TMDB_API_KEY,
+    api_key: LOCAL_TMDB_API_KEY,
     query: title,
     include_adult: 'false',
     language
@@ -436,7 +454,7 @@ const fetchTmdbMovieSearchResults = async (title, year, language) => {
 }
 
 const fetchMovieStreamingFromTmdb = async (title, year) => {
-  if (!TMDB_API_KEY) {
+  if (!LOCAL_TMDB_API_KEY) {
     return null
   }
 
@@ -458,7 +476,7 @@ const fetchMovieStreamingFromTmdb = async (title, year) => {
   }
 
   const providersParams = new URLSearchParams({
-    api_key: TMDB_API_KEY
+    api_key: LOCAL_TMDB_API_KEY
   })
   const providersResponse = await fetchJsonp(`${TMDB_API_BASE_URL}/movie/${matchedMovie.id}/watch/providers?${providersParams.toString()}`)
   const regionalProviders = providersResponse?.results?.[MOVIE_STREAMING_REGION]
@@ -701,30 +719,46 @@ function App() {
         return
       }
 
-      if (!OMDB_API_KEY && !TMDB_API_KEY) {
+      const serverPayload = await fetchMovieDetailsFromServer(trimmedTitle)
+
+      if (serverPayload) {
+        if (serverPayload.ok && serverPayload.movie) {
+          setMovieResult(serverPayload.movie)
+          setLoading(false)
+          return
+        }
+
+        setAnswer(serverPayload.error ?? 'Kunde inte hitta filmen. Kontrollera titeln och prova igen.')
+        setLoading(false)
+        return
+      }
+
+      if (!LOCAL_OMDB_API_KEY && !LOCAL_TMDB_API_KEY) {
         setAnswer(
           'Filmkategorin behöver API-nycklar innan den kan användas.\n\n' +
-          'Lägg till detta i .env.local:\n' +
+          'På Vercel lägger du in detta under Project Settings -> Environment Variables:\n' +
+          'OMDB_API_KEY=din_omdb_nyckel\n' +
+          'TMDB_API_KEY=din_tmdb_nyckel\n\n' +
+          'Om du bara kör lokalt i Vite kan du också använda detta i .env.local:\n' +
           'VITE_OMDB_API_KEY=din_omdb_nyckel\n' +
-          'VITE_TMDB_API_KEY=din_tmdb_nyckel\n\n' +
-          'Starta sedan om appen.'
+          'VITE_TMDB_API_KEY=din_tmdb_nyckel'
         )
         setLoading(false)
         return
       }
 
-      if (!OMDB_API_KEY) {
-        addNote('IMDb och Rotten Tomatoes kräver VITE_OMDB_API_KEY i .env.local.')
+      if (!LOCAL_OMDB_API_KEY) {
+        addNote('IMDb och Rotten Tomatoes visas så fort OMDb-nyckeln är konfigurerad.')
       }
 
-      if (!TMDB_API_KEY) {
-        addNote('Streaming visas så fort VITE_TMDB_API_KEY är ifylld i .env.local.')
+      if (!LOCAL_TMDB_API_KEY) {
+        addNote('Streaming visas så fort TMDB-nyckeln är konfigurerad.')
       }
 
       let omdbMovie = null
       let tmdbMovie = null
 
-      if (OMDB_API_KEY) {
+      if (LOCAL_OMDB_API_KEY) {
         try {
           omdbMovie = await fetchMovieRatingsFromOmdb(trimmedTitle)
         } catch (error) {
@@ -733,7 +767,7 @@ function App() {
         }
       }
 
-      if (TMDB_API_KEY) {
+      if (LOCAL_TMDB_API_KEY) {
         try {
           tmdbMovie = await fetchMovieStreamingFromTmdb(
             omdbMovie?.title ?? trimmedTitle,
