@@ -66,6 +66,25 @@ body {
   box-sizing: border-box;
 }
 
+@keyframes ticker-scroll {
+  0% {
+    transform: translateX(0);
+  }
+
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+.news-ticker-track {
+  min-width: max-content;
+  animation: ticker-scroll 54s linear infinite;
+}
+
+.news-ticker-track:hover {
+  animation-play-state: paused;
+}
+
 h1,
 h2 {
   font-family: var(--heading);

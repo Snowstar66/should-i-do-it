@@ -5,7 +5,10 @@ const LOCAL_TMDB_API_KEY = import.meta.env.VITE_TMDB_API_KEY?.trim()
 const SPOT_PRICE_AREAS = ['SE1', 'SE2', 'SE3', 'SE4']
 const SPOT_PRICE_TIME_ZONE = 'Europe/Stockholm'
 const SPOT_PRICE_API_BASE_URL = 'https://www.elprisetjustnu.se/api/v1/prices'
+const EXCHANGE_RATE_API_URL = 'https://api.frankfurter.dev/v1/latest?base=EUR&symbols=SEK,USD,GBP'
+const WEATHER_API_BASE_URL = 'https://api.open-meteo.com/v1/forecast'
 const MOVIE_API_PATH = '/api/movie'
+const WORLD_API_PATH = '/api/world'
 const TMDB_API_BASE_URL = 'https://api.themoviedb.org/3'
 const MOVIE_STREAMING_REGION = 'SE'
 const WIKIPEDIA_SEARCH_LANGUAGES = ['sv', 'en']
@@ -24,6 +27,10 @@ const MOVIE_PROVIDER_SECTIONS = [
   { key: 'ads', label: 'Med reklam hos' },
   { key: 'rent', label: 'Hyr hos' },
   { key: 'buy', label: 'Kop hos' }
+]
+const WEATHER_LOCATIONS = [
+  { key: 'ostersund', name: 'Östersund', latitude: 63.1792, longitude: 14.6357 },
+  { key: 'marbella', name: 'Marbella', latitude: 36.5101, longitude: -4.8824 }
 ]
 
 const fetchJsonp = (url) => new Promise((resolve, reject) => {
@@ -551,7 +558,9 @@ const fetchShortAnswerFromWikipedia = async (question) => {
 
       return {
         answer: answerText,
-        sourceLabel: language === 'sv' ? 'Wikipedia' : 'English Wikipedia'
+        sourceLabel: language === 'sv' ? 'Wikipedia' : 'English Wikipedia',
+        imageUrl: summary?.thumbnail?.source ?? summary?.originalimage?.source ?? null,
+        imageAlt: summary?.title ?? bestPage?.title ?? question
       }
     }
   }
@@ -612,20 +621,209 @@ const fetchSpotPriceAverageForDate = async (area, dayOffset) => {
   return calculateAverageSpotPriceInOre(entries)
 }
 
+const getWeatherDescriptionFromCode = (code) => {
+  const weatherDescriptions = {
+    0: 'Klart',
+    1: 'Mest klart',
+    2: 'Växlande molnighet',
+    3: 'Mulet',
+    45: 'Dimma',
+    48: 'Rimfrostdimma',
+    51: 'Lätt duggregn',
+    53: 'Duggregn',
+    55: 'Tätt duggregn',
+    56: 'Lätt underkylt duggregn',
+    57: 'Underkylt duggregn',
+    61: 'Lätt regn',
+    63: 'Regn',
+    65: 'Kraftigt regn',
+    66: 'Lätt underkylt regn',
+    67: 'Underkylt regn',
+    71: 'Lätt snö',
+    73: 'Snö',
+    75: 'Kraftig snö',
+    77: 'Snökorn',
+    80: 'Lätta skurar',
+    81: 'Regnskurar',
+    82: 'Kraftiga skurar',
+    85: 'Lätta snöbyar',
+    86: 'Kraftiga snöbyar',
+    95: 'Åska',
+    96: 'Åska med hagel',
+    99: 'Kraftig åska med hagel'
+  }
+
+  return weatherDescriptions[code] ?? 'Okänt väder'
+}
+
+const getWeatherSymbolFromCode = (code) => {
+  if ([0, 1].includes(code)) {
+    return '☀'
+  }
+
+  if ([2].includes(code)) {
+    return '⛅'
+  }
+
+  if ([3, 45, 48].includes(code)) {
+    return '☁'
+  }
+
+  if ([51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82].includes(code)) {
+    return '☂'
+  }
+
+  if ([71, 73, 75, 77, 85, 86].includes(code)) {
+    return '❄'
+  }
+
+  if ([95, 96, 99].includes(code)) {
+    return '⚡'
+  }
+
+  return '•'
+}
+
+const formatNumber = (value, maximumFractionDigits = 1) => new Intl.NumberFormat('sv-SE', {
+  minimumFractionDigits: 0,
+  maximumFractionDigits
+}).format(value)
+
+const fetchWorldHighlightsFromServer = async () => {
+  try {
+    const response = await fetch(WORLD_API_PATH)
+    const contentType = response.headers.get('content-type') ?? ''
+
+    if (!contentType.includes('application/json')) {
+      return null
+    }
+
+    return response.json()
+  } catch (error) {
+    console.error('World API endpoint unavailable, skipping oil and news flash:', error)
+    return null
+  }
+}
+
+const fetchExchangeRates = async () => {
+  const payload = await fetchJson(EXCHANGE_RATE_API_URL)
+  const eurToSek = Number(payload?.rates?.SEK)
+  const eurToUsd = Number(payload?.rates?.USD)
+  const eurToGbp = Number(payload?.rates?.GBP)
+  const usdToSek = eurToSek && eurToUsd ? eurToSek / eurToUsd : null
+  const gbpToSek = eurToSek && eurToGbp ? eurToSek / eurToGbp : null
+
+  return {
+    date: payload?.date ?? '',
+    eurToSek: Number.isFinite(eurToSek) ? eurToSek : null,
+    usdToSek: Number.isFinite(usdToSek) ? usdToSek : null,
+    gbpToSek: Number.isFinite(gbpToSek) ? gbpToSek : null
+  }
+}
+
+const fetchWeatherForLocation = async ({ latitude, longitude, name, key }) => {
+  const params = new URLSearchParams({
+    latitude: String(latitude),
+    longitude: String(longitude),
+    current: 'temperature_2m,apparent_temperature,weather_code,wind_speed_10m',
+    daily: 'temperature_2m_max,temperature_2m_min,precipitation_probability_max',
+    forecast_days: '1',
+    timezone: 'auto'
+  })
+  const payload = await fetchJson(`${WEATHER_API_BASE_URL}?${params.toString()}`)
+
+  return {
+    key,
+    name,
+    temperature: Number(payload?.current?.temperature_2m),
+    apparentTemperature: Number(payload?.current?.apparent_temperature),
+    windSpeed: Number(payload?.current?.wind_speed_10m),
+    weatherCode: Number(payload?.current?.weather_code),
+    description: getWeatherDescriptionFromCode(Number(payload?.current?.weather_code)),
+    maxTemperature: Number(payload?.daily?.temperature_2m_max?.[0]),
+    minTemperature: Number(payload?.daily?.temperature_2m_min?.[0]),
+    precipitationProbability: Number(payload?.daily?.precipitation_probability_max?.[0] ?? 0)
+  }
+}
+
+const getWeatherComparisonText = (ostersund, marbella) => {
+  if (!ostersund || !marbella || !Number.isFinite(ostersund.temperature) || !Number.isFinite(marbella.temperature)) {
+    return ''
+  }
+
+  const difference = Math.round((marbella.temperature - ostersund.temperature) * 10) / 10
+  const hasWindData = Number.isFinite(ostersund.windSpeed) && Number.isFinite(marbella.windSpeed)
+  const hasRainData = Number.isFinite(ostersund.precipitationProbability) && Number.isFinite(marbella.precipitationProbability)
+
+  let windComment = ''
+  if (hasWindData) {
+    const windDifference = marbella.windSpeed - ostersund.windSpeed
+
+    if (windDifference <= -2) {
+      windComment = 'Där är det dessutom snällare vindar.'
+    } else if (windDifference >= 2) {
+      windComment = 'Men vinden tar i lite mer där nere.'
+    } else {
+      windComment = 'Vindmässigt är det ganska jämnt.'
+    }
+  }
+
+  let rainComment = ''
+  if (hasRainData) {
+    const rainDifference = marbella.precipitationProbability - ostersund.precipitationProbability
+
+    if (rainDifference <= -15) {
+      rainComment = 'Paraplyet kan troligen vila oftare i Marbella.'
+    } else if (rainDifference >= 15) {
+      rainComment = 'Paraplyläget är faktiskt lite mer aktivt i Marbella i dag.'
+    } else {
+      rainComment = 'Regnrisken är ungefär på samma humör på båda håll.'
+    }
+  }
+
+  if (difference === 0) {
+    return ['Oväntat nog är temperaturduellen helt jämn just nu mellan Östersund och Marbella.', windComment, rainComment].filter(Boolean).join(' ')
+  }
+
+  if (difference > 0) {
+    return [`Marbella vinner den här rundan med ${formatNumber(difference)}° mer värme just nu.`, windComment, rainComment].filter(Boolean).join(' ')
+  }
+
+  return [`Östersund står för dagens väderskräll och leder med ${formatNumber(Math.abs(difference))}° just nu.`, windComment, rainComment].filter(Boolean).join(' ')
+}
+
 function App() {
   const [question, setQuestion] = useState('')
   const [answer, setAnswer] = useState('')
+  const [answerImage, setAnswerImage] = useState(null)
+  const [answerImageAlt, setAnswerImageAlt] = useState('')
+  const [answerSourceLabel, setAnswerSourceLabel] = useState('')
   const [questionType, setQuestionType] = useState('general')
   const [weight, setWeight] = useState('')
   const [height, setHeight] = useState('')
   const [bmi, setBmi] = useState('')
   const [bmiClassification, setBmiClassification] = useState('')
-  const [birthYear, setBirthYear] = useState('')
-  const [age, setAge] = useState('')
   const [movieResult, setMovieResult] = useState(null)
   const [loading, setLoading] = useState(false)
   const [dateTime, setDateTime] = useState(new Date())
   const [showInfo, setShowInfo] = useState(false)
+  const [exchangeRates, setExchangeRates] = useState({
+    date: '',
+    eurToSek: null,
+    usdToSek: null,
+    gbpToSek: null
+  })
+  const [oilPrice, setOilPrice] = useState({
+    label: 'Brentolja',
+    date: '',
+    usdPerBarrel: null,
+    sekPerBarrel: null
+  })
+  const [newsFlashItems, setNewsFlashItems] = useState([])
+  const [weatherComparison, setWeatherComparison] = useState({
+    ostersund: null,
+    marbella: null
+  })
   const [spotPrices, setSpotPrices] = useState({
     SE1: { today: null, tomorrow: null },
     SE2: { today: null, tomorrow: null },
@@ -653,6 +851,33 @@ function App() {
     setSpotPrices(Object.fromEntries(areaEntries))
   }
 
+  const fetchWorldSnapshot = async () => {
+    try {
+      const [rates, weatherEntries, worldHighlights] = await Promise.all([
+        fetchExchangeRates(),
+        Promise.all(WEATHER_LOCATIONS.map((location) => fetchWeatherForLocation(location))),
+        fetchWorldHighlightsFromServer()
+      ])
+
+      setExchangeRates(rates)
+      setOilPrice({
+        label: worldHighlights?.oilPrice?.label ?? 'Brentolja',
+        date: worldHighlights?.oilPrice?.date ?? '',
+        usdPerBarrel: worldHighlights?.oilPrice?.usdPerBarrel ?? null,
+        sekPerBarrel: worldHighlights?.oilPrice?.usdPerBarrel && rates.usdToSek
+          ? worldHighlights.oilPrice.usdPerBarrel * rates.usdToSek
+          : null
+      })
+      setNewsFlashItems(Array.isArray(worldHighlights?.news) ? worldHighlights.news : [])
+      setWeatherComparison({
+        ostersund: weatherEntries.find((entry) => entry.key === 'ostersund') ?? null,
+        marbella: weatherEntries.find((entry) => entry.key === 'marbella') ?? null
+      })
+    } catch (error) {
+      console.error('Error fetching world snapshot:', error)
+    }
+  }
+
   useEffect(() => {
     const timer = setInterval(() => {
       setDateTime(new Date())
@@ -660,10 +885,14 @@ function App() {
     const spotPriceTimer = setTimeout(() => {
       void fetchSpotPrices()
     }, 0)
+    const worldSnapshotTimer = setTimeout(() => {
+      void fetchWorldSnapshot()
+    }, 0)
 
     return () => {
       clearInterval(timer)
       clearTimeout(spotPriceTimer)
+      clearTimeout(worldSnapshotTimer)
     }
   }, [])
 
@@ -689,20 +918,13 @@ function App() {
     setBmiClassification(classification)
   }
 
-  const calculateAge = () => {
-    if (!birthYear) {
-      alert("Vänligen ange födelseår")
-      return
-    }
-    const currentYear = new Date().getFullYear()
-    const ageValue = currentYear - parseInt(birthYear)
-    setAge(ageValue)
-  }
-
   const fetchMovieDetails = async () => {
     try {
       setLoading(true)
       setAnswer('')
+      setAnswerImage(null)
+      setAnswerImageAlt('')
+      setAnswerSourceLabel('')
       setMovieResult(null)
 
       const trimmedTitle = question.trim()
@@ -822,10 +1044,16 @@ function App() {
     try {
       setLoading(true)
       setMovieResult(null)
+      setAnswerImage(null)
+      setAnswerImageAlt('')
+      setAnswerSourceLabel('')
       const shortAnswer = await fetchShortAnswerFromWikipedia(question)
 
       if (shortAnswer) {
-        setAnswer(`${shortAnswer.answer}\n\n— Källa: ${shortAnswer.sourceLabel}`)
+        setAnswer(shortAnswer.answer)
+        setAnswerImage(shortAnswer.imageUrl ?? null)
+        setAnswerImageAlt(shortAnswer.imageAlt ?? '')
+        setAnswerSourceLabel(shortAnswer.sourceLabel ?? '')
         setLoading(false)
         return
       }
@@ -845,11 +1073,6 @@ function App() {
       return
     }
 
-    if (questionType === 'age') {
-      calculateAge()
-      return
-    }
-
     setMovieResult(null)
 
     if (!question) {
@@ -866,126 +1089,113 @@ function App() {
   }
 
   const isBmiQuestion = questionType === 'bmi'
-  const isAgeQuestion = questionType === 'age'
   const isMovieQuestion = questionType === 'movie'
 
   return (
     <div style={{
       minHeight: '100vh',
-      background: 'linear-gradient(135deg, #2f855a 0%, #276749 100%)',
+      background: '#f8f9fa',
       display: 'flex',
       flexDirection: 'column',
       alignItems: 'center',
       justifyContent: 'space-between',
       fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-      padding: '20px',
-      paddingTop: '40px',
-      paddingBottom: '40px'
+      padding: '20px 16px 32px 16px',
+      color: '#202122'
     }}>
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', width: '100%' }}>
-        <div style={{ fontSize: '60px', marginBottom: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', height: '80px', position: 'relative' }}>
-          <div>🐩</div>
-        </div>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', width: '100%', paddingTop: '18px' }}>
         <div style={{
-          background: 'white',
-          borderRadius: '20px',
-          boxShadow: '0 20px 60px rgba(0, 0, 0, 0.3)',
-          padding: '50px',
-          maxWidth: '500px',
+          background: '#fff',
+          borderRadius: '12px',
+          border: '1px solid #a2a9b1',
+          boxShadow: '0 1px 3px rgba(0, 0, 0, 0.08)',
+          padding: 'clamp(18px, 4vw, 28px)',
+          maxWidth: '540px',
           width: '100%',
           position: 'relative'
         }}>
-        <div style={{ position: 'absolute', top: '15px', right: '15px', display: 'flex', gap: '10px' }}>
+        <div style={{ position: 'absolute', top: '15px', right: '15px' }}>
           <button
             onClick={() => setShowInfo(!showInfo)}
             style={{
-              background: 'linear-gradient(135deg, #2f855a 0%, #276749 100%)',
-              border: 'none',
+              background: '#f3f7fb',
+              border: '1px solid #a7b9c9',
               borderRadius: '50%',
-              width: '40px',
-              height: '40px',
+              width: '36px',
+              height: '36px',
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              fontSize: '20px',
-              color: 'white',
+              fontSize: '17px',
+              fontWeight: '700',
+              color: '#2f6fa3',
               transition: 'all 0.3s ease',
-              boxShadow: '0 4px 12px rgba(47, 133, 90, 0.3)',
+              boxShadow: '0 1px 2px rgba(0, 0, 0, 0.08)',
               padding: '0'
             }}
             onMouseOver={(e) => {
-              e.target.style.boxShadow = '0 6px 16px rgba(47, 133, 90, 0.5)'
-              e.target.style.transform = 'scale(1.1)'
+              e.target.style.boxShadow = '0 3px 8px rgba(0, 0, 0, 0.14)'
+              e.target.style.transform = 'translateY(-1px)'
             }}
             onMouseOut={(e) => {
-              e.target.style.boxShadow = '0 4px 12px rgba(47, 133, 90, 0.3)'
+              e.target.style.boxShadow = '0 1px 2px rgba(0, 0, 0, 0.08)'
               e.target.style.transform = 'scale(1)'
             }}
             title="Information"
           >
-            ⓘ
-          </button>
-          <button
-            onClick={() => {
-              setQuestion('')
-              setAnswer('')
-              setQuestionType('general')
-              setWeight('')
-              setHeight('')
-              setBmi('')
-              setBmiClassification('')
-              setBirthYear('')
-              setAge('')
-              setMovieResult(null)
-              setLoading(false)
-            }}
-            style={{
-              background: 'linear-gradient(135deg, #2f855a 0%, #276749 100%)',
-              border: 'none',
-              borderRadius: '50%',
-              width: '40px',
-              height: '40px',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: '20px',
-              color: 'white',
-              transition: 'all 0.3s ease',
-              boxShadow: '0 4px 12px rgba(47, 133, 90, 0.3)',
-              padding: '0'
-            }}
-            onMouseOver={(e) => {
-              e.target.style.boxShadow = '0 6px 16px rgba(47, 133, 90, 0.5)'
-              e.target.style.transform = 'rotate(180deg) scale(1.1)'
-            }}
-            onMouseOut={(e) => {
-              e.target.style.boxShadow = '0 4px 12px rgba(47, 133, 90, 0.3)'
-              e.target.style.transform = 'rotate(0deg) scale(1)'
-            }}
-            title="Nollställ allt"
-          >
-            ⟲
+            i
           </button>
         </div>
-        <h1 style={{
-          fontSize: '32px',
-          fontWeight: '700',
-          color: '#222',
-          marginBottom: '30px',
-          margin: '0 0 30px 0'
-        }}>Fråga något du vill veta</h1>
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '10px',
+          marginBottom: '16px'
+        }}>
+          <img
+            src="/favicon.svg"
+            alt="Maxipedia"
+            style={{
+              width: '52px',
+              height: '52px',
+              display: 'block',
+              flexShrink: 0
+            }}
+          />
+          <div style={{ textAlign: 'left' }}>
+            <p style={{
+              margin: '0',
+              fontSize: 'clamp(26px, 7vw, 33px)',
+              lineHeight: '1.02',
+              color: '#202122',
+              fontFamily: 'Georgia, "Times New Roman", serif',
+              fontWeight: '700'
+            }}>Maxipedia</p>
+          </div>
+        </div>
 
         <div style={{
-          background: '#f1fbf4',
+          background: '#f6f9fc',
           borderRadius: '12px',
-          padding: '15px',
+          border: '1px solid #d2dbe4',
+          padding: '12px',
           marginBottom: '20px'
         }}>
-          <p style={{ fontSize: '14px', fontWeight: '600', color: '#555', margin: '0 0 12px 0' }}>Typ av fråga:</p>
-          <div style={{ display: 'flex', gap: '15px' }}>
-            <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+          <div style={{ display: 'flex', gap: '15px', flexWrap: 'wrap', justifyContent: 'center' }}>
+            <label style={{
+              display: 'flex',
+              alignItems: 'center',
+              cursor: 'pointer',
+              gap: '8px',
+              padding: '10px 14px',
+              borderRadius: '999px',
+              background: questionType === 'general' ? '#e9f1f8' : '#fff',
+              color: '#202122',
+              border: `1px solid ${questionType === 'general' ? '#2f6fa3' : '#d2dbe4'}`,
+              boxShadow: 'none'
+            }}>
               <input
                 type="radio"
                 name="questionType"
@@ -994,20 +1204,32 @@ function App() {
                 onChange={(e) => {
                   setQuestionType(e.target.value)
                   setAnswer('')
+                  setAnswerImage(null)
+                  setAnswerImageAlt('')
+                  setAnswerSourceLabel('')
                   setQuestion('')
                   setWeight('')
                   setHeight('')
                   setBmi('')
                   setBmiClassification('')
-                  setBirthYear('')
-                  setAge('')
                   setMovieResult(null)
                 }}
-                style={{ cursor: 'pointer', marginRight: '6px' }}
+                style={{ cursor: 'pointer', margin: '0' }}
               />
-              <span style={{ fontSize: '14px', color: '#555' }}>Generell</span>
+              <span style={{ fontSize: '14px', fontWeight: '700' }}>Snabbfråga</span>
             </label>
-            <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+            <label style={{
+              display: 'flex',
+              alignItems: 'center',
+              cursor: 'pointer',
+              gap: '8px',
+              padding: '10px 14px',
+              borderRadius: '999px',
+              background: questionType === 'bmi' ? '#eef5f1' : '#fff',
+              color: '#202122',
+              border: `1px solid ${questionType === 'bmi' ? '#4f8c6d' : '#d2dbe4'}`,
+              boxShadow: 'none'
+            }}>
               <input
                 type="radio"
                 name="questionType"
@@ -1016,42 +1238,32 @@ function App() {
                 onChange={(e) => {
                   setQuestionType(e.target.value)
                   setAnswer('')
+                  setAnswerImage(null)
+                  setAnswerImageAlt('')
+                  setAnswerSourceLabel('')
                   setQuestion('')
                   setWeight('')
                   setHeight('')
                   setBmi('')
                   setBmiClassification('')
-                  setBirthYear('')
-                  setAge('')
                   setMovieResult(null)
                 }}
-                style={{ cursor: 'pointer', marginRight: '6px' }}
+                style={{ cursor: 'pointer', margin: '0' }}
               />
-              <span style={{ fontSize: '14px', color: '#555' }}>BMI</span>
+              <span style={{ fontSize: '14px', fontWeight: '700' }}>Hälsa & BMI</span>
             </label>
-            <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
-              <input
-                type="radio"
-                name="questionType"
-                value="age"
-                checked={questionType === 'age'}
-                onChange={(e) => {
-                  setQuestionType(e.target.value)
-                  setAnswer('')
-                  setQuestion('')
-                  setWeight('')
-                  setHeight('')
-                  setBmi('')
-                  setBmiClassification('')
-                  setBirthYear('')
-                  setMovieResult(null)
-                  setAge('')
-                }}
-                style={{ cursor: 'pointer', marginRight: '6px' }}
-              />
-              <span style={{ fontSize: '14px', color: '#555' }}>Ålder</span>
-            </label>
-            <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+            <label style={{
+              display: 'flex',
+              alignItems: 'center',
+              cursor: 'pointer',
+              gap: '8px',
+              padding: '10px 14px',
+              borderRadius: '999px',
+              background: questionType === 'movie' ? '#e9f1f8' : '#fff',
+              color: '#202122',
+              border: `1px solid ${questionType === 'movie' ? '#2f6fa3' : '#d2dbe4'}`,
+              boxShadow: 'none'
+            }}>
               <input
                 type="radio"
                 name="questionType"
@@ -1060,63 +1272,75 @@ function App() {
                 onChange={(e) => {
                   setQuestionType(e.target.value)
                   setAnswer('')
+                  setAnswerImage(null)
+                  setAnswerImageAlt('')
+                  setAnswerSourceLabel('')
                   setQuestion('')
                   setWeight('')
                   setHeight('')
                   setBmi('')
                   setBmiClassification('')
-                  setBirthYear('')
-                  setAge('')
                   setMovieResult(null)
                 }}
-                style={{ cursor: 'pointer', marginRight: '6px' }}
+                style={{ cursor: 'pointer', margin: '0' }}
               />
-              <span style={{ fontSize: '14px', color: '#555' }}>Film</span>
+              <span style={{ fontSize: '14px', fontWeight: '700' }}>Filmtitel</span>
             </label>
           </div>
         </div>
 
         {(questionType === 'general' || isMovieQuestion) && (
-        <input
-          type="text"
-          placeholder="Skriv din fråga..."
-          value={question}
-          onChange={(e) => {
-            setQuestion(e.target.value)
-            setAnswer('')
-            setWeight('')
-            setHeight('')
-            setBmi('')
-            setBmiClassification('')
-            setBirthYear('')
-            setAge('')
-            setMovieResult(null)
-          }}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              handleClick()
-            }
-          }}
-          style={{
-            width: '100%',
-            padding: '14px 16px',
-            fontSize: '16px',
-            border: '2px solid #e0e0e0',
-            borderRadius: '12px',
-            boxSizing: 'border-box',
-            transition: 'all 0.3s ease',
-            outline: 'none',
-            marginBottom: '20px'
-          }}
-          onFocus={(e) => e.target.style.borderColor = '#2f855a'}
-          onBlur={(e) => e.target.style.borderColor = '#e0e0e0'}
-        />
+          <>
+            {isMovieQuestion && (
+              <p style={{ margin: '0 0 10px 0', fontSize: '14px', color: '#4b5563', lineHeight: '1.6' }}>
+                Sök på svensk eller utländsk filmtitel. Lite felstavning fungerar också.
+              </p>
+            )}
+            <input
+              type="text"
+              placeholder={isMovieQuestion ? 'Skriv en filmtitel, till exempel Harry Potter eller Lejonkungen' : 'Skriv din fråga...'}
+              value={question}
+              onChange={(e) => {
+                setQuestion(e.target.value)
+                setAnswer('')
+                setAnswerImage(null)
+                setAnswerImageAlt('')
+                setAnswerSourceLabel('')
+                setWeight('')
+                setHeight('')
+                setBmi('')
+                setBmiClassification('')
+                setMovieResult(null)
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  handleClick()
+                }
+              }}
+              style={{
+                width: '100%',
+                padding: '14px 16px',
+                fontSize: '16px',
+                border: '1px solid #a2a9b1',
+                borderRadius: '12px',
+                boxSizing: 'border-box',
+                transition: 'all 0.3s ease',
+                outline: 'none',
+                marginBottom: '20px',
+                background: '#fff',
+                color: '#202122'
+              }}
+              onFocus={(e) => e.target.style.borderColor = '#3366cc'}
+              onBlur={(e) => e.target.style.borderColor = '#a2a9b1'}
+            />
+          </>
         )}
 
         {isBmiQuestion && (
           <div style={{
-            background: '#f1fbf4',
+            background: '#f6f9fc',
             borderRadius: '12px',
+            border: '1px solid #d2dbe4',
             padding: '20px',
             marginBottom: '20px'
           }}>
@@ -1125,22 +1349,23 @@ function App() {
                 display: 'block',
                 fontSize: '14px',
                 fontWeight: '600',
-                color: '#555',
+                color: '#4b5563',
                 marginBottom: '8px'
-              }}>Weight (kg)</label>
+              }}>Vikt (kg)</label>
               <input
                 type="number"
                 value={weight}
                 onChange={(e) => setWeight(e.target.value === '' ? '' : parseFloat(e.target.value))}
-                placeholder="Enter weight"
+                placeholder="Ange vikt"
                 style={{
                   width: '100%',
                   padding: '10px 12px',
                   fontSize: '14px',
-                  border: '2px solid #e0e0e0',
+                  border: '1px solid #a2a9b1',
                   borderRadius: '8px',
                   boxSizing: 'border-box',
-                  outline: 'none'
+                  outline: 'none',
+                  background: '#fff'
                 }}
               />
             </div>
@@ -1149,22 +1374,23 @@ function App() {
                 display: 'block',
                 fontSize: '14px',
                 fontWeight: '600',
-                color: '#555',
+                color: '#4b5563',
                 marginBottom: '8px'
-              }}>Height (cm)</label>
+              }}>Längd (cm)</label>
               <input
                 type="number"
                 value={height}
                 onChange={(e) => setHeight(e.target.value === '' ? '' : parseFloat(e.target.value))}
-                placeholder="Enter height"
+                placeholder="Ange längd"
                 style={{
                   width: '100%',
                   padding: '10px 12px',
                   fontSize: '14px',
-                  border: '2px solid #e0e0e0',
+                  border: '1px solid #a2a9b1',
                   borderRadius: '8px',
                   boxSizing: 'border-box',
-                  outline: 'none'
+                  outline: 'none',
+                  background: '#fff'
                 }}
               />
             </div>
@@ -1174,55 +1400,12 @@ function App() {
                 padding: '15px',
                 background: 'white',
                 borderRadius: '8px',
-                textAlign: 'center'
+                textAlign: 'center',
+                border: '1px solid #dbe5ee'
               }}>
-                <p style={{ color: '#888', fontSize: '12px', margin: '0 0 5px 0' }}>Your BMI</p>
-                <h2 style={{ color: '#2f855a', fontSize: '36px', fontWeight: '700', margin: '0 0 10px 0' }}>{bmi}</h2>
-                <p style={{ color: '#276749', fontSize: '14px', fontWeight: '600', margin: '0' }}>{bmiClassification}</p>
-              </div>
-            )}
-          </div>
-        )}
-
-        {isAgeQuestion && (
-          <div style={{
-            background: '#f1fbf4',
-            borderRadius: '12px',
-            padding: '20px',
-            marginBottom: '20px'
-          }}>
-            <label style={{
-              display: 'block',
-              fontSize: '14px',
-              fontWeight: '600',
-              color: '#555',
-              marginBottom: '8px'
-            }}>Birth Year</label>
-            <input
-              type="number"
-              value={birthYear}
-              onChange={(e) => setBirthYear(e.target.value)}
-              placeholder="Enter birth year"
-              style={{
-                width: '100%',
-                padding: '10px 12px',
-                fontSize: '14px',
-                border: '2px solid #e0e0e0',
-                borderRadius: '8px',
-                boxSizing: 'border-box',
-                outline: 'none',
-                marginBottom: '15px'
-              }}
-            />
-            {age && (
-              <div style={{
-                padding: '15px',
-                background: 'white',
-                borderRadius: '8px',
-                textAlign: 'center'
-              }}>
-                <p style={{ color: '#888', fontSize: '12px', margin: '0 0 5px 0' }}>Your Age</p>
-                <h2 style={{ color: '#2f855a', fontSize: '36px', fontWeight: '700', margin: '0' }}>{age}</h2>
+                <p style={{ color: '#6b7280', fontSize: '12px', margin: '0 0 5px 0' }}>Ditt BMI</p>
+                <h2 style={{ color: '#2f6fa3', fontSize: '36px', fontWeight: '700', margin: '0 0 10px 0' }}>{bmi}</h2>
+                <p style={{ color: '#4f8c6d', fontSize: '14px', fontWeight: '600', margin: '0' }}>{bmiClassification}</p>
               </div>
             )}
           </div>
@@ -1237,27 +1420,27 @@ function App() {
             fontSize: '16px',
             fontWeight: '600',
             color: 'white',
-            background: 'linear-gradient(135deg, #2f855a 0%, #276749 100%)',
+            background: 'linear-gradient(180deg, #447ff5 0%, #3366cc 100%)',
             border: 'none',
             borderRadius: '12px',
             cursor: loading ? 'not-allowed' : 'pointer',
             transition: 'all 0.3s ease',
-            boxShadow: '0 4px 15px rgba(47, 133, 90, 0.4)',
+            boxShadow: '0 4px 15px rgba(51, 102, 204, 0.28)',
             marginBottom: '25px',
             opacity: loading ? 0.7 : 1
           }}
           onMouseOver={(e) => {
             if (!loading) {
-              e.target.style.boxShadow = '0 6px 20px rgba(47, 133, 90, 0.6)'
+              e.target.style.boxShadow = '0 6px 20px rgba(51, 102, 204, 0.38)'
               e.target.style.transform = 'translateY(-2px)'
             }
           }}
           onMouseOut={(e) => {
-            e.target.style.boxShadow = '0 4px 15px rgba(47, 133, 90, 0.4)'
+            e.target.style.boxShadow = '0 4px 15px rgba(51, 102, 204, 0.28)'
             e.target.style.transform = 'translateY(0)'
           }}
         >
-          {loading ? 'Laddar...' : questionType === 'bmi' ? 'Beräkna BMI' : questionType === 'age' ? 'Beräkna ålder' : questionType === 'movie' ? 'Sök film' : 'Få svar'}
+          {loading ? 'Laddar...' : questionType === 'bmi' ? 'Beräkna BMI' : questionType === 'movie' ? 'Sök film' : 'Få svar'}
         </button>
 
         {isMovieQuestion && movieResult && (
@@ -1409,7 +1592,7 @@ function App() {
           </div>
         )}
 
-        {!isBmiQuestion && !isAgeQuestion && answer && (
+        {!isBmiQuestion && answer && (
           <div style={{
             background: '#f1fbf4',
             borderRadius: '12px',
@@ -1417,6 +1600,20 @@ function App() {
             border: '1px solid #d9ebe0',
             borderLeft: '5px solid #2f855a'
           }}>
+            {answerImage && (
+              <img
+                src={answerImage}
+                alt={answerImageAlt || 'Illustration'}
+                style={{
+                  width: '100%',
+                  maxHeight: '240px',
+                  objectFit: 'cover',
+                  borderRadius: '12px',
+                  marginBottom: '16px',
+                  boxShadow: '0 8px 24px rgba(0, 0, 0, 0.12)'
+                }}
+              />
+            )}
             <p style={{
               fontSize: '16px',
               lineHeight: '1.8',
@@ -1429,6 +1626,16 @@ function App() {
             }}>
               {answer}
             </p>
+            {answerSourceLabel && (
+              <p style={{
+                margin: '14px 0 0 0',
+                fontSize: '12px',
+                color: '#6b7280',
+                fontWeight: '600'
+              }}>
+                Källa: {answerSourceLabel}
+              </p>
+            )}
           </div>
         )}
       </div>
@@ -1449,10 +1656,11 @@ function App() {
           padding: '20px'
         }}>
           <div onClick={(e) => e.stopPropagation()} style={{
-            background: 'white',
-            borderRadius: '20px',
-            boxShadow: '0 30px 90px rgba(0, 0, 0, 0.4)',
-            padding: '40px',
+            background: '#fff',
+            borderRadius: '12px',
+            border: '1px solid #a2a9b1',
+            boxShadow: '0 10px 30px rgba(0, 0, 0, 0.18)',
+            padding: 'clamp(22px, 4vw, 40px)',
             maxWidth: '600px',
             width: '100%',
             maxHeight: '85vh',
@@ -1465,31 +1673,83 @@ function App() {
                 fontWeight: '700',
                 color: '#2f855a',
                 margin: '0 0 10px 0'
-              }}>🎨 Pontus the Great</p>
+              }}>Maxipedia</p>
               <p style={{
                 fontSize: '16px',
                 fontWeight: '600',
                 color: '#276749',
                 margin: '0'
-              }}>AI Master Architect</p>
+              }}>Snabbfrågor, film, el, världskoll och nyhetsflash i ett kort</p>
               <p style={{
                 fontSize: '13px',
                 color: '#888',
                 marginTop: '8px',
                 fontStyle: 'italic'
-              }}>Designer av denna applikation</p>
+              }}>Byggd för snabba vardagsbeslut och kul jämförelser</p>
             </div>
 
             <div style={{
               borderTop: '2px solid #f0f0f0',
               paddingTop: '25px'
             }}>
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr',
+                gap: '12px',
+                marginBottom: '22px'
+              }}>
+                <div style={{
+                  background: '#f1fbf4',
+                  padding: '14px',
+                  borderRadius: '12px',
+                  borderLeft: '4px solid #2f855a'
+                }}>
+                  <p style={{ margin: '0 0 6px 0', fontWeight: '700', color: '#2f855a' }}>Det här kan du göra</p>
+                  <p style={{ margin: '0', color: '#555', fontSize: '12px', lineHeight: '1.6' }}>
+                    Ställa generella frågor, söka på filmtitlar, kolla elpris, valuta, väder, Brentolja och senaste nyhetsflashen.
+                  </p>
+                </div>
+                <div style={{
+                  background: '#f1fbf4',
+                  padding: '14px',
+                  borderRadius: '12px',
+                  borderLeft: '4px solid #2f855a'
+                }}>
+                  <p style={{ margin: '0 0 6px 0', fontWeight: '700', color: '#2f855a' }}>Datakällor</p>
+                  <p style={{ margin: '0', color: '#555', fontSize: '12px', lineHeight: '1.6' }}>
+                    Wikipedia, OMDb, TMDB, Elpriset just nu, Frankfurter, Open-Meteo, BBC RSS och Brent-data via Stooq.
+                  </p>
+                </div>
+                <div style={{
+                  background: '#f1fbf4',
+                  padding: '14px',
+                  borderRadius: '12px',
+                  borderLeft: '4px solid #2f855a'
+                }}>
+                  <p style={{ margin: '0 0 6px 0', fontWeight: '700', color: '#2f855a' }}>På Vercel</p>
+                  <p style={{ margin: '0', color: '#555', fontSize: '12px', lineHeight: '1.6' }}>
+                    Filmdelen använder serverfunktioner så att OMDb- och TMDB-nycklar kan hållas privata i projektets environment variables.
+                  </p>
+                </div>
+                <div style={{
+                  background: '#f1fbf4',
+                  padding: '14px',
+                  borderRadius: '12px',
+                  borderLeft: '4px solid #2f855a'
+                }}>
+                  <p style={{ margin: '0 0 6px 0', fontWeight: '700', color: '#2f855a' }}>Tips</p>
+                  <p style={{ margin: '0', color: '#555', fontSize: '12px', lineHeight: '1.6' }}>
+                    Testa svenska filmtitlar, felstavningar och korta faktasökningar. Världskoll uppdateras automatiskt när appen laddas.
+                  </p>
+                </div>
+              </div>
+
               <h3 style={{
                 fontSize: '18px',
                 fontWeight: '700',
                 color: '#333',
                 marginBottom: '15px'
-              }}>🛠️ Teknik & Komponenter</h3>
+              }}>Teknik & komponenter</h3>
               
               <div style={{
                 display: 'grid',
@@ -1540,8 +1800,8 @@ function App() {
                   borderRadius: '10px',
                   borderLeft: '4px solid #2f855a'
                 }}>
-                  <p style={{ margin: '0 0 4px 0', fontWeight: '600', color: '#2f855a' }}>CSS3 Animations</p>
-                  <p style={{ margin: '0', color: '#555', fontSize: '12px' }}>@keyframes för smooth visuell rörelse</p>
+                  <p style={{ margin: '0 0 4px 0', fontWeight: '600', color: '#2f855a' }}>CSS Animations</p>
+                  <p style={{ margin: '0', color: '#555', fontSize: '12px' }}>Ticker-rörelse och små hover-effekter i UI:t</p>
                 </div>
                 <div style={{
                   background: '#f1fbf4',
@@ -1567,8 +1827,8 @@ function App() {
                   borderRadius: '10px',
                   borderLeft: '4px solid #2f855a'
                 }}>
-                  <p style={{ margin: '0 0 4px 0', fontWeight: '600', color: '#2f855a' }}>Web Audio API</p>
-                  <p style={{ margin: '0', color: '#555', fontSize: '12px' }}>Skapar ljud-effekter programmatiskt</p>
+                  <p style={{ margin: '0 0 4px 0', fontWeight: '600', color: '#2f855a' }}>Vercel Functions</p>
+                  <p style={{ margin: '0', color: '#555', fontSize: '12px' }}>Server-side hämtning för filmdata, Brentolja och nyhetsflash</p>
                 </div>
                 <div style={{
                   background: '#f1fbf4',
@@ -1639,8 +1899,8 @@ function App() {
                   borderRadius: '10px',
                   borderLeft: '4px solid #2f855a'
                 }}>
-                  <p style={{ margin: '0 0 4px 0', fontWeight: '600', color: '#2f855a' }}>VS Code</p>
-                  <p style={{ margin: '0', color: '#555', fontSize: '12px' }}>Utvecklingsmiljö för kodning</p>
+                  <p style={{ margin: '0 0 4px 0', fontWeight: '600', color: '#2f855a' }}>BBC RSS & Stooq</p>
+                  <p style={{ margin: '0', color: '#555', fontSize: '12px' }}>Ger nyhetsflash och Brentpris i världskoll-delen</p>
                 </div>
                 <div style={{
                   background: '#f1fbf4',
@@ -1882,16 +2142,16 @@ function App() {
       }}>
         <div style={{
           textAlign: 'center',
-          color: 'white',
+          color: '#202122',
           marginBottom: '14px'
         }}>
-          <p style={{ margin: '0 0 4px 0', fontSize: '18px', fontWeight: '700' }}>Spotpris el per område</p>
-          <p style={{ margin: '0', fontSize: '12px', opacity: 0.9 }}>Visas i öre/kWh, exklusive moms, skatt och elnätsavgifter.</p>
+          <p style={{ margin: '0 0 4px 0', fontSize: '18px', fontWeight: '700', fontFamily: 'Georgia, "Times New Roman", serif' }}>Spotpris el per område</p>
+          <p style={{ margin: '0', fontSize: '12px', color: '#54595d' }}>Visas i öre/kWh, exklusive moms, skatt och elnätsavgifter.</p>
         </div>
 
         <div style={{
           display: 'grid',
-          gridTemplateColumns: '1fr 1fr 1fr 1fr',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
           gap: '12px',
           width: '100%'
         }}>
@@ -1902,14 +2162,14 @@ function App() {
             { area: 'SE4', name: 'Malmö', today: spotPrices.SE4?.today, tomorrow: spotPrices.SE4?.tomorrow }
           ].map((region) => (
             <div key={region.area} style={{
-              background: 'rgba(255, 255, 255, 0.95)',
+              background: '#fff',
               borderRadius: '12px',
               padding: '15px',
               textAlign: 'center',
-              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)',
-              backdropFilter: 'blur(10px)'
+              border: '1px solid #d2dbe4',
+              boxShadow: '0 1px 3px rgba(0, 0, 0, 0.08)'
             }}>
-              <p style={{ fontSize: '13px', fontWeight: '700', color: '#2f855a', margin: '0 0 10px 0' }}>{region.name}</p>
+              <p style={{ fontSize: '13px', fontWeight: '700', color: '#3366cc', margin: '0 0 10px 0', whiteSpace: 'nowrap' }}>{`${region.area} ${region.name}`}</p>
               <div style={{ marginBottom: '8px' }}>
                 <p style={{ fontSize: '11px', fontWeight: '600', color: '#888', margin: '0 0 3px 0' }}>Idag (medel)</p>
                 <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#222', margin: '0' }}>
@@ -1929,17 +2189,296 @@ function App() {
       </div>
 
       <div style={{
-        marginTop: '25px',
+        width: '100%',
+        maxWidth: '900px',
+        marginBottom: '24px'
+      }}>
+        <div style={{
+          textAlign: 'center',
+          color: '#202122',
+          marginBottom: '14px'
+        }}>
+          <p style={{ margin: '0 0 4px 0', fontSize: '18px', fontWeight: '700', fontFamily: 'Georgia, "Times New Roman", serif' }}>Världskoll</p>
+          <p style={{ margin: '0', fontSize: '12px', color: '#54595d' }}>Valutor, olja, väderduell och de senaste stora rubrikerna.</p>
+        </div>
+
+        <div style={{
+          overflow: 'hidden',
+          borderRadius: '12px',
+          background: '#fff',
+          border: '1px solid #d2dbe4',
+          boxShadow: '0 1px 3px rgba(0, 0, 0, 0.08)',
+          marginBottom: '12px'
+        }}>
+          <div className="news-ticker-track" style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '28px',
+            padding: '12px 20px',
+            whiteSpace: 'nowrap'
+          }}>
+            {(newsFlashItems.length > 0 ? [...newsFlashItems, ...newsFlashItems] : [
+              { title: 'Nyhetsflash laddas...', link: '#', source: 'Flash' }
+            ]).map((item, index) => (
+              <a
+                key={`${item.title}-${index}`}
+                href={item.link}
+                target={item.link !== '#' ? '_blank' : undefined}
+                rel={item.link !== '#' ? 'noreferrer' : undefined}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                  color: '#1f2937',
+                  textDecoration: 'none',
+                  fontSize: '13px',
+                  fontWeight: '600'
+                }}
+              >
+                <span style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  minWidth: '28px',
+                  height: '28px',
+                  borderRadius: '999px',
+                  background: '#e8f0f8',
+                  color: '#2f6fa3',
+                  fontSize: '12px',
+                  fontWeight: '700'
+                }}>
+                  N
+                </span>
+                <span>{item.title}</span>
+                {item.source ? <span style={{ color: '#6b7280', fontSize: '11px' }}>{item.source}</span> : null}
+              </a>
+            ))}
+          </div>
+        </div>
+
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
+          gap: '12px',
+          width: '100%'
+        }}>
+          <div style={{
+            background: 'rgba(255, 255, 255, 0.95)',
+            borderRadius: '14px',
+            padding: '16px',
+            border: '1px solid #d2dbe4',
+            boxShadow: '0 1px 3px rgba(0, 0, 0, 0.08)'
+          }}>
+            <p style={{ margin: '0 0 12px 0', fontSize: '14px', fontWeight: '800', color: '#2f6fa3', textAlign: 'center' }}>Marknad</p>
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+              gap: '10px'
+            }}>
+              {[
+                { key: 'eur', symbol: '€', label: 'EUR till SEK', value: exchangeRates.eurToSek !== null ? `${formatNumber(exchangeRates.eurToSek, 2)} kr` : '—', sublabel: '1 EUR' },
+                { key: 'usd', symbol: '$', label: 'USD till SEK', value: exchangeRates.usdToSek !== null ? `${formatNumber(exchangeRates.usdToSek, 2)} kr` : '—', sublabel: '1 USD' },
+                { key: 'gbp', symbol: '£', label: 'GBP till SEK', value: exchangeRates.gbpToSek !== null ? `${formatNumber(exchangeRates.gbpToSek, 2)} kr` : '—', sublabel: '1 GBP' },
+                { key: 'brent', symbol: 'BRENT', label: oilPrice.label, value: oilPrice.usdPerBarrel !== null ? `${formatNumber(oilPrice.usdPerBarrel, 2)} USD` : '—', sublabel: oilPrice.sekPerBarrel !== null ? `≈ ${formatNumber(oilPrice.sekPerBarrel, 0)} kr/fat` : 'per fat' }
+              ].map((item) => (
+                <div key={item.key} style={{
+                  background: '#f8fbff',
+                  border: '1px solid #dbe5ee',
+                  borderRadius: '12px',
+                  padding: '14px 12px',
+                  textAlign: 'center',
+                  minWidth: 0
+                }}>
+                  <div style={{
+                    width: '44px',
+                    height: '44px',
+                    borderRadius: '14px',
+                    background: item.key === 'brent' ? '#eef5f1' : '#e8f0f8',
+                    color: item.key === 'brent' ? '#4f8c6d' : '#2f6fa3',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: item.key === 'brent' ? '12px' : '24px',
+                    fontWeight: '800',
+                    margin: '0 auto 10px auto'
+                  }}>
+                    {item.symbol}
+                  </div>
+                  <p style={{ fontSize: '12px', fontWeight: '700', color: item.key === 'brent' ? '#4f8c6d' : '#2f6fa3', margin: '0 0 8px 0', whiteSpace: 'nowrap' }}>{item.label}</p>
+                  <h3 style={{ fontSize: '22px', fontWeight: '700', color: '#222', margin: '0 0 4px 0', whiteSpace: 'nowrap' }}>
+                    {item.value}
+                  </h3>
+                  <p style={{ fontSize: '12px', color: '#6b7280', margin: '0', whiteSpace: 'nowrap' }}>{item.sublabel}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div style={{
+            background: 'rgba(255, 255, 255, 0.95)',
+            borderRadius: '14px',
+            padding: '16px',
+            border: '1px solid #d2dbe4',
+            boxShadow: '0 1px 3px rgba(0, 0, 0, 0.08)'
+          }}>
+            <p style={{ margin: '0 0 12px 0', fontSize: '14px', fontWeight: '800', color: '#4f8c6d', textAlign: 'center' }}>Väderduell</p>
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+              gap: '10px'
+            }}>
+              {[
+                weatherComparison.ostersund
+                  ? weatherComparison.ostersund
+                  : { key: 'ostersund', name: 'Östersund' },
+                weatherComparison.marbella
+                  ? weatherComparison.marbella
+                  : { key: 'marbella', name: 'Marbella' }
+              ].map((location) => (
+                <div
+                  key={location.key}
+                  style={{
+                    background: '#f9fcfa',
+                    border: '1px solid #dbe9e1',
+                    borderRadius: '12px',
+                    padding: '14px 12px',
+                    textAlign: 'center',
+                    minWidth: 0
+                  }}
+                >
+                  <div style={{
+                    width: '44px',
+                    height: '44px',
+                    borderRadius: '14px',
+                    background: '#eef5f1',
+                    color: '#4f8c6d',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '24px',
+                    fontWeight: '700',
+                    margin: '0 auto 10px auto'
+                  }}>
+                    {getWeatherSymbolFromCode(location.weatherCode)}
+                  </div>
+                  <p style={{ fontSize: '12px', fontWeight: '700', color: '#4f8c6d', margin: '0 0 8px 0', whiteSpace: 'nowrap' }}>{location.name}</p>
+                  <h3 style={{ fontSize: '22px', fontWeight: '700', color: '#222', margin: '0 0 4px 0', whiteSpace: 'nowrap' }}>
+                    {location && Number.isFinite(location.temperature) ? `${formatNumber(location.temperature)}°` : '—'}
+                  </h3>
+                  <p style={{ fontSize: '12px', color: '#4b5563', margin: '0 0 8px 0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {location?.description ?? 'Hämtar väder...'}
+                  </p>
+                  <p style={{ fontSize: '12px', color: '#6b7280', margin: '0 0 4px 0', whiteSpace: 'nowrap' }}>
+                    Känns som {location && Number.isFinite(location.apparentTemperature) ? `${formatNumber(location.apparentTemperature)}°` : '—'}
+                  </p>
+                  <p style={{ fontSize: '12px', color: '#6b7280', margin: '0 0 4px 0', whiteSpace: 'nowrap' }}>
+                    Idag {location && Number.isFinite(location.minTemperature) && Number.isFinite(location.maxTemperature) ? `${formatNumber(location.minTemperature)}° / ${formatNumber(location.maxTemperature)}°` : '—'}
+                  </p>
+                  <p style={{ fontSize: '12px', color: '#6b7280', margin: '0 0 4px 0', whiteSpace: 'nowrap' }}>
+                    Regnrisk {location && Number.isFinite(location.precipitationProbability) ? `${formatNumber(location.precipitationProbability, 0)}%` : '—'}
+                  </p>
+                  <p style={{ fontSize: '12px', color: '#6b7280', margin: '0', whiteSpace: 'nowrap' }}>
+                    Vind {location && Number.isFinite(location.windSpeed) ? `${formatNumber(location.windSpeed)} m/s` : '—'}
+                  </p>
+                </div>
+              ))}
+            </div>
+            <div style={{
+              marginTop: '12px',
+              background: '#eef5f1',
+              border: '1px solid #dbe9e1',
+              borderRadius: '12px',
+              padding: '12px 14px',
+              textAlign: 'center'
+            }}>
+              <p style={{ margin: '0', fontSize: '13px', fontWeight: '700', color: '#355d48', lineHeight: '1.6' }}>
+                {getWeatherComparisonText(weatherComparison.ostersund, weatherComparison.marbella) || 'Hämtar jämförelsen mellan Östersund och Marbella...'}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div style={{
+          marginTop: '12px',
+          background: '#fff',
+          border: '1px solid #d2dbe4',
+          borderRadius: '12px',
+          padding: '12px 16px',
+          color: '#202122',
+          textAlign: 'center'
+        }}>
+          <p style={{ margin: '0 0 10px 0', fontSize: '14px', fontWeight: '700', color: '#2f6fa3' }}>Senaste rubriker</p>
+          <div style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: '8px',
+            justifyContent: 'center'
+          }}>
+            {(newsFlashItems.length > 0 ? newsFlashItems.slice(0, 6) : [{ title: 'Hämtar stora nyheter just nu...', link: '#', source: 'Flash' }]).map((item, index) => {
+              const isClickable = item.link && item.link !== '#'
+
+              return isClickable ? (
+                <a
+                  key={item.link}
+                  href={item.link}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    maxWidth: '250px',
+                    padding: '7px 11px',
+                    borderRadius: '999px',
+                    background: '#edf3f8',
+                    color: '#2f6fa3',
+                    textDecoration: 'none',
+                    fontSize: '11px',
+                    fontWeight: '600',
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis'
+                  }}
+                >
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.title}</span>
+                </a>
+              ) : (
+                <span
+                  key={`${item.title}-${index}`}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    maxWidth: '250px',
+                    padding: '7px 11px',
+                    borderRadius: '999px',
+                    background: '#edf3f8',
+                    color: '#2f6fa3',
+                    fontSize: '11px',
+                    fontWeight: '600',
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis'
+                  }}
+                >
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.title}</span>
+                </span>
+              )
+            })}
+          </div>
+        </div>
+      </div>
+
+      <div style={{
+        marginTop: '22px',
         textAlign: 'center',
-        color: 'white',
+        color: '#54595d',
         fontSize: '14px',
         fontWeight: '500',
-        opacity: 0.9
+        opacity: 1
       }}>
         <p style={{ margin: '0' }}>
           {dateTime.toLocaleDateString('sv-SE', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
         </p>
-        <p style={{ margin: '5px 0 0 0', fontSize: '18px', fontWeight: '600' }}>
+        <p style={{ margin: '5px 0 0 0', fontSize: '18px', fontWeight: '600', color: '#202122' }}>
           {dateTime.toLocaleTimeString('sv-SE')}
         </p>
       </div>
