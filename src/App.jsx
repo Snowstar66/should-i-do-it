@@ -1,11 +1,11 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 
 const LOCAL_OMDB_API_KEY = import.meta.env.VITE_OMDB_API_KEY?.trim()
 const LOCAL_TMDB_API_KEY = import.meta.env.VITE_TMDB_API_KEY?.trim()
 const SPOT_PRICE_AREAS = ['SE1', 'SE2', 'SE3', 'SE4']
 const SPOT_PRICE_TIME_ZONE = 'Europe/Stockholm'
 const SPOT_PRICE_API_BASE_URL = 'https://www.elprisetjustnu.se/api/v1/prices'
-const EXCHANGE_RATE_API_URL = 'https://api.frankfurter.dev/v1/latest?base=EUR&symbols=SEK,USD,GBP'
+const EXCHANGE_RATE_API_BASE_URL = 'https://api.frankfurter.dev/v1'
 const WEATHER_API_BASE_URL = 'https://api.open-meteo.com/v1/forecast'
 const MOVIE_API_PATH = '/api/movie'
 const WORLD_API_PATH = '/api/world'
@@ -28,10 +28,14 @@ const MOVIE_PROVIDER_SECTIONS = [
   { key: 'rent', label: 'Hyr hos' },
   { key: 'buy', label: 'Kop hos' }
 ]
+const MOVIE_CLIENT_CACHE_TTL_MS = 1000 * 60 * 10
+const APP_SECTION_MAX_WIDTH = '900px'
+const movieClientCache = new Map()
 const WEATHER_LOCATIONS = [
   { key: 'ostersund', name: 'Östersund', latitude: 63.1792, longitude: 14.6357 },
   { key: 'marbella', name: 'Marbella', latitude: 36.5101, longitude: -4.8824 }
 ]
+const HISTORY_DAY_OFFSETS = [-6, -5, -4, -3, -2, -1, 0]
 
 const fetchJsonp = (url) => new Promise((resolve, reject) => {
   const callbackName = `jsonp_${Date.now()}_${Math.random().toString(36).slice(2)}`
@@ -149,6 +153,28 @@ const normalizeMovieTitle = (value) => String(value ?? '')
   .replace(/&/g, ' and ')
   .replace(/[^a-z0-9]+/g, ' ')
   .trim()
+
+const getClientMovieCacheValue = (key) => {
+  const cachedEntry = movieClientCache.get(key)
+
+  if (!cachedEntry) {
+    return null
+  }
+
+  if (cachedEntry.expiresAt <= Date.now()) {
+    movieClientCache.delete(key)
+    return null
+  }
+
+  return cachedEntry.value
+}
+
+const setClientMovieCacheValue = (key, value) => {
+  movieClientCache.set(key, {
+    value,
+    expiresAt: Date.now() + MOVIE_CLIENT_CACHE_TTL_MS
+  })
+}
 
 const getUniqueProviderNames = (providers) => [
   ...new Set(
@@ -270,9 +296,60 @@ const mapOmdbMovieResponse = (response, fallbackTitle) => ({
   rottenTomatoesRating: response?.Ratings?.find((rating) => rating?.Source === 'Rotten Tomatoes')?.Value ?? null
 })
 
-const fetchMovieDetailsFromServer = async (title) => {
+const findBestOmdbSearchCandidate = async (queryTitle, titleHints = [], maxVariants = 5) => {
+  let bestMatch = null
+  const searchVariants = [...new Set(titleHints.flatMap((titleHint) => getMovieSearchVariants(titleHint)))]
+    .slice(0, maxVariants)
+
+  for (const variant of searchVariants) {
+    const searchParams = new URLSearchParams({
+      apikey: LOCAL_OMDB_API_KEY,
+      s: variant,
+      type: 'movie',
+      r: 'json'
+    })
+    const searchResponse = await fetchOmdbMovieResponse(searchParams)
+    const searchResults = Array.isArray(searchResponse?.Search) ? searchResponse.Search : []
+    const candidate = searchResults
+      .map((result) => ({
+        ...result,
+        score: Math.max(
+          getMovieTitleMatchScore(result?.Title, queryTitle),
+          ...titleHints.map((titleHint) => getMovieTitleMatchScore(result?.Title, titleHint))
+        )
+      }))
+      .filter((result) => result.score >= MOVIE_MATCH_SCORE_THRESHOLD)
+      .sort((left, right) => right.score - left.score)[0] ?? null
+
+    if (candidate && (!bestMatch || candidate.score > bestMatch.score)) {
+      bestMatch = candidate
+    }
+  }
+
+  return bestMatch
+}
+
+const fetchMovieDetailsFromServer = async (title, options = {}) => {
   try {
+    const includeRelated = Boolean(options.includeRelated)
+    const relatedOnly = Boolean(options.relatedOnly)
+    const cacheKey = `${normalizeMovieTitle(title)}|related:${includeRelated ? 'yes' : 'no'}|only:${relatedOnly ? 'yes' : 'no'}`
+    const cachedValue = getClientMovieCacheValue(cacheKey)
+
+    if (cachedValue) {
+      return cachedValue
+    }
+
     const params = new URLSearchParams({ title })
+
+    if (includeRelated) {
+      params.set('includeRelated', '1')
+    }
+
+    if (relatedOnly) {
+      params.set('relatedOnly', '1')
+    }
+
     const response = await fetch(`${MOVIE_API_PATH}?${params.toString()}`)
     const contentType = response.headers.get('content-type') ?? ''
 
@@ -280,7 +357,13 @@ const fetchMovieDetailsFromServer = async (title) => {
       return null
     }
 
-    return response.json()
+    const payload = await response.json()
+
+    if (payload?.ok && (payload?.movie || payload?.relatedMovies)) {
+      setClientMovieCacheValue(cacheKey, payload)
+    }
+
+    return payload
   } catch (error) {
     console.error('Movie API endpoint unavailable, falling back to local browser fetch:', error)
     return null
@@ -361,6 +444,33 @@ const fetchMovieRatingsFromOmdb = async (title) => {
     return null
   }
 
+  const directExactMatchParams = new URLSearchParams({
+    apikey: LOCAL_OMDB_API_KEY,
+    t: title,
+    type: 'movie',
+    plot: 'short',
+    r: 'json'
+  })
+  const directExactMatch = await fetchOmdbMovieResponse(directExactMatchParams)
+
+  if (directExactMatch) {
+    return mapOmdbMovieResponse(directExactMatch, title)
+  }
+
+  const directSearchMatch = await findBestOmdbSearchCandidate(title, [title], 3)
+
+  if (directSearchMatch?.imdbID) {
+    const detailsParams = new URLSearchParams({
+      apikey: LOCAL_OMDB_API_KEY,
+      i: directSearchMatch.imdbID,
+      plot: 'short',
+      r: 'json'
+    })
+    const detailsResponse = await fetchOmdbMovieResponse(detailsParams)
+
+    return detailsResponse ? mapOmdbMovieResponse(detailsResponse, title) : null
+  }
+
   const titleHints = [...new Set([
     title,
     ...(await fetchMovieTitleHintsFromWikipedia(title))
@@ -381,34 +491,7 @@ const fetchMovieRatingsFromOmdb = async (title) => {
     }
   }
 
-  let bestMatch = null
-
-  const searchVariants = [...new Set(titleHints.flatMap((titleHint) => getMovieSearchVariants(titleHint)))]
-
-  for (const variant of searchVariants) {
-    const searchParams = new URLSearchParams({
-      apikey: LOCAL_OMDB_API_KEY,
-      s: variant,
-      type: 'movie',
-      r: 'json'
-    })
-    const searchResponse = await fetchOmdbMovieResponse(searchParams)
-    const searchResults = Array.isArray(searchResponse?.Search) ? searchResponse.Search : []
-    const candidate = searchResults
-      .map((result) => ({
-        ...result,
-        score: Math.max(
-          getMovieTitleMatchScore(result?.Title, title),
-          ...titleHints.map((titleHint) => getMovieTitleMatchScore(result?.Title, titleHint))
-        )
-      }))
-      .filter((result) => result.score >= MOVIE_MATCH_SCORE_THRESHOLD)
-      .sort((left, right) => right.score - left.score)[0] ?? null
-
-    if (candidate && (!bestMatch || candidate.score > bestMatch.score)) {
-      bestMatch = candidate
-    }
-  }
+  const bestMatch = await findBestOmdbSearchCandidate(title, titleHints, 5)
 
   if (!bestMatch?.imdbID) {
     return null
@@ -569,21 +652,9 @@ const fetchShortAnswerFromWikipedia = async (question) => {
 }
 
 const getSpotPriceDatePath = (dayOffset = 0) => {
-  const targetDate = new Date(Date.now() + dayOffset * 24 * 60 * 60 * 1000)
-  const dateParts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: SPOT_PRICE_TIME_ZONE,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit'
-  }).formatToParts(targetDate).reduce((parts, part) => {
-    if (part.type !== 'literal') {
-      parts[part.type] = part.value
-    }
+  const [year, month, day] = getCalendarDateString(dayOffset, SPOT_PRICE_TIME_ZONE).split('-')
 
-    return parts
-  }, {})
-
-  return `${dateParts.year}/${dateParts.month}-${dateParts.day}`
+  return `${year}/${month}-${day}`
 }
 
 const calculateAverageSpotPriceInOre = (entries) => {
@@ -706,18 +777,59 @@ const fetchWorldHighlightsFromServer = async () => {
 }
 
 const fetchExchangeRates = async () => {
-  const payload = await fetchJson(EXCHANGE_RATE_API_URL)
-  const eurToSek = Number(payload?.rates?.SEK)
-  const eurToUsd = Number(payload?.rates?.USD)
-  const eurToGbp = Number(payload?.rates?.GBP)
-  const usdToSek = eurToSek && eurToUsd ? eurToSek / eurToUsd : null
-  const gbpToSek = eurToSek && eurToGbp ? eurToSek / eurToGbp : null
+  const mapExchangePayload = (payload) => {
+    const eurToSek = Number(payload?.rates?.SEK)
+    const eurToUsd = Number(payload?.rates?.USD)
+    const eurToGbp = Number(payload?.rates?.GBP)
+    const usdToSek = eurToSek && eurToUsd ? eurToSek / eurToUsd : null
+    const gbpToSek = eurToSek && eurToGbp ? eurToSek / eurToGbp : null
+
+    return {
+      date: payload?.date ?? '',
+      eurToSek: Number.isFinite(eurToSek) ? eurToSek : null,
+      usdToSek: Number.isFinite(usdToSek) ? usdToSek : null,
+      gbpToSek: Number.isFinite(gbpToSek) ? gbpToSek : null
+    }
+  }
+
+  const latestPayload = await fetchJson(`${EXCHANGE_RATE_API_BASE_URL}/latest?base=EUR&symbols=SEK,USD,GBP`)
+  const historicalResults = await Promise.allSettled(
+    HISTORY_DAY_OFFSETS.map((offset) => fetchJson(`${EXCHANGE_RATE_API_BASE_URL}/${getCalendarDateString(offset)}?base=EUR&symbols=SEK,USD,GBP`))
+  )
+
+  const mappedEntries = [latestPayload, ...historicalResults
+    .filter((result) => result.status === 'fulfilled')
+    .map((result) => result.value)]
+    .map(mapExchangePayload)
+    .filter((entry) => entry.date)
+    .reduce((entries, entry) => {
+      if (!entries.some((existingEntry) => existingEntry.date === entry.date)) {
+        entries.push(entry)
+      }
+
+      return entries
+    }, [])
+    .sort((left, right) => left.date.localeCompare(right.date))
+
+  const latestEntry = mappedEntries[mappedEntries.length - 1] ?? {}
+  const previousEntry = mappedEntries[mappedEntries.length - 2] ?? {}
 
   return {
-    date: payload?.date ?? '',
-    eurToSek: Number.isFinite(eurToSek) ? eurToSek : null,
-    usdToSek: Number.isFinite(usdToSek) ? usdToSek : null,
-    gbpToSek: Number.isFinite(gbpToSek) ? gbpToSek : null
+    date: latestEntry.date ?? '',
+    previousDate: previousEntry.date ?? '',
+    eurToSek: latestEntry.eurToSek ?? null,
+    usdToSek: latestEntry.usdToSek ?? null,
+    gbpToSek: latestEntry.gbpToSek ?? null,
+    previous: {
+      eurToSek: previousEntry.eurToSek ?? null,
+      usdToSek: previousEntry.usdToSek ?? null,
+      gbpToSek: previousEntry.gbpToSek ?? null
+    },
+    history: {
+      eur: mappedEntries.map((entry) => ({ label: getShortWeekdayLabelFromDate(entry.date), value: entry.eurToSek, date: entry.date })),
+      usd: mappedEntries.map((entry) => ({ label: getShortWeekdayLabelFromDate(entry.date), value: entry.usdToSek, date: entry.date })),
+      gbp: mappedEntries.map((entry) => ({ label: getShortWeekdayLabelFromDate(entry.date), value: entry.gbpToSek, date: entry.date }))
+    }
   }
 }
 
@@ -725,8 +837,8 @@ const fetchWeatherForLocation = async ({ latitude, longitude, name, key }) => {
   const params = new URLSearchParams({
     latitude: String(latitude),
     longitude: String(longitude),
-    current: 'temperature_2m,apparent_temperature,weather_code,wind_speed_10m',
-    daily: 'temperature_2m_max,temperature_2m_min,precipitation_probability_max',
+    current: 'temperature_2m,apparent_temperature,weather_code,wind_speed_10m,relative_humidity_2m',
+    daily: 'temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset,uv_index_max',
     forecast_days: '1',
     timezone: 'auto'
   })
@@ -738,11 +850,15 @@ const fetchWeatherForLocation = async ({ latitude, longitude, name, key }) => {
     temperature: Number(payload?.current?.temperature_2m),
     apparentTemperature: Number(payload?.current?.apparent_temperature),
     windSpeed: Number(payload?.current?.wind_speed_10m),
+    humidity: Number(payload?.current?.relative_humidity_2m),
     weatherCode: Number(payload?.current?.weather_code),
     description: getWeatherDescriptionFromCode(Number(payload?.current?.weather_code)),
     maxTemperature: Number(payload?.daily?.temperature_2m_max?.[0]),
     minTemperature: Number(payload?.daily?.temperature_2m_min?.[0]),
-    precipitationProbability: Number(payload?.daily?.precipitation_probability_max?.[0] ?? 0)
+    precipitationProbability: Number(payload?.daily?.precipitation_probability_max?.[0] ?? 0),
+    uvIndexMax: Number(payload?.daily?.uv_index_max?.[0]),
+    sunrise: payload?.daily?.sunrise?.[0] ?? '',
+    sunset: payload?.daily?.sunset?.[0] ?? ''
   }
 }
 
@@ -792,6 +908,179 @@ const getWeatherComparisonText = (ostersund, marbella) => {
   return [`Östersund står för dagens väderskräll och leder med ${formatNumber(Math.abs(difference))}° just nu.`, windComment, rainComment].filter(Boolean).join(' ')
 }
 
+const getCalendarDateString = (dayOffset = 0, timeZone) => {
+  const targetDate = new Date(Date.now() + dayOffset * 24 * 60 * 60 * 1000)
+
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).format(targetDate)
+}
+
+const getShortWeekdayLabel = (dayOffset = 0, timeZone) => {
+  const targetDate = new Date(Date.now() + dayOffset * 24 * 60 * 60 * 1000)
+
+  return new Intl.DateTimeFormat('sv-SE', {
+    timeZone,
+    weekday: 'short'
+  }).format(targetDate).replace('.', '')
+}
+
+const getShortWeekdayLabelFromDate = (dateString) => {
+  if (!dateString) {
+    return ''
+  }
+
+  return new Intl.DateTimeFormat('sv-SE', {
+    weekday: 'short'
+  }).format(new Date(`${dateString}T12:00:00`)).replace('.', '')
+}
+
+const getChangeDetails = (currentValue, previousValue) => {
+  if (!Number.isFinite(currentValue) || !Number.isFinite(previousValue)) {
+    return {
+      delta: null,
+      percentChange: null,
+      direction: 'flat',
+      color: '#6b7280',
+      label: '0,00',
+      percentLabel: '0,00%'
+    }
+  }
+
+  const delta = Math.round((currentValue - previousValue) * 100) / 100
+  const percentChange = previousValue !== 0 ? (delta / previousValue) * 100 : null
+  const sign = delta > 0 ? '+' : delta < 0 ? '-' : ''
+  const label = `${sign}${formatNumber(Math.abs(delta), 2)}`
+  const percentLabel = Number.isFinite(percentChange)
+    ? `${sign}${formatNumber(Math.abs(percentChange), 2)}%`
+    : '—'
+
+  if (delta > 0) {
+    return {
+      delta,
+      percentChange,
+      direction: 'up',
+      color: '#2f855a',
+      label,
+      percentLabel
+    }
+  }
+
+  if (delta < 0) {
+    return {
+      delta,
+      percentChange,
+      direction: 'down',
+      color: '#c0392b',
+      label,
+      percentLabel
+    }
+  }
+
+  return {
+    delta: 0,
+    percentChange: 0,
+    direction: 'flat',
+    color: '#6b7280',
+    label: '0,00',
+    percentLabel: '0,00%'
+  }
+}
+
+const getTrendPoints = (history) => (history ?? [])
+  .filter((entry) => Number.isFinite(entry?.value))
+  .map((entry) => ({
+    label: entry.label,
+    value: entry.value
+  }))
+
+const SparklineChart = ({ history, color = '#2f6fa3', fill = 'rgba(47, 111, 163, 0.14)', height = 78 }) => {
+  const points = getTrendPoints(history)
+
+  if (points.length < 2) {
+    return (
+      <div style={{
+        height: `${height}px`,
+        borderRadius: '10px',
+        background: '#f8fafc',
+        border: '1px dashed #d2dbe4',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        color: '#94a3b8',
+        fontSize: '12px'
+      }}>
+        För lite trenddata ännu
+      </div>
+    )
+  }
+
+  const width = 320
+  const padding = 12
+  const values = points.map((point) => point.value)
+  const minValue = Math.min(...values)
+  const maxValue = Math.max(...values)
+  const range = Math.max(maxValue - minValue, 1)
+  const stepX = (width - padding * 2) / Math.max(points.length - 1, 1)
+  const linePoints = points.map((point, index) => {
+    const x = padding + stepX * index
+    const y = padding + ((maxValue - point.value) / range) * (height - padding * 2)
+
+    return `${x},${y}`
+  }).join(' ')
+  const areaPoints = `${padding},${height - padding} ${linePoints} ${width - padding},${height - padding}`
+
+  return (
+    <div style={{ width: '100%' }}>
+      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Trendgraf" style={{ width: '100%', height: `${height}px`, display: 'block' }}>
+        <polygon points={areaPoints} fill={fill} />
+        <polyline
+          points={linePoints}
+          fill="none"
+          stroke={color}
+          strokeWidth="3"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '4px', fontSize: '11px', color: '#6b7280' }}>
+        <span>{points[0]?.label ?? ''}</span>
+        <span>{points[points.length - 1]?.label ?? ''}</span>
+      </div>
+    </div>
+  )
+}
+
+const FlipCard = ({ flipped, onToggle, minHeight = 220, front, back, frontLabel, backLabel }) => (
+  <div className={`flip-card${flipped ? ' is-flipped' : ''}`} style={{ minHeight: `${minHeight}px` }}>
+    <div
+      className="flip-card-button"
+      role="button"
+      tabIndex={0}
+      onClick={onToggle}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          onToggle()
+        }
+      }}
+      aria-label={flipped ? backLabel ?? 'Visa framsidan' : frontLabel ?? 'Visa baksidan'}
+    >
+      <div className="flip-card-inner">
+        <div className="flip-card-face flip-card-front">
+          <div className="flip-card-content">{front}</div>
+        </div>
+        <div className="flip-card-face flip-card-back">
+          <div className="flip-card-content">{back}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+)
+
 function App() {
   const [question, setQuestion] = useState('')
   const [answer, setAnswer] = useState('')
@@ -804,20 +1093,41 @@ function App() {
   const [bmi, setBmi] = useState('')
   const [bmiClassification, setBmiClassification] = useState('')
   const [movieResult, setMovieResult] = useState(null)
+  const [isLoadingRelatedMovies, setIsLoadingRelatedMovies] = useState(false)
   const [loading, setLoading] = useState(false)
   const [dateTime, setDateTime] = useState(new Date())
   const [showInfo, setShowInfo] = useState(false)
+  const [flippedCards, setFlippedCards] = useState({})
+  const activeMovieRequestRef = useRef(0)
   const [exchangeRates, setExchangeRates] = useState({
     date: '',
+    previousDate: '',
     eurToSek: null,
     usdToSek: null,
-    gbpToSek: null
+    gbpToSek: null,
+    previous: {
+      eurToSek: null,
+      usdToSek: null,
+      gbpToSek: null
+    },
+    history: {
+      eur: [],
+      usd: [],
+      gbp: []
+    }
   })
   const [oilPrice, setOilPrice] = useState({
     label: 'Brentolja',
     date: '',
     usdPerBarrel: null,
-    sekPerBarrel: null
+    sekPerBarrel: null,
+    previousUsdPerBarrel: null,
+    previousSekPerBarrel: null,
+    open: null,
+    high: null,
+    low: null,
+    historyUsd: [],
+    historySek: []
   })
   const [newsFlashItems, setNewsFlashItems] = useState([])
   const [weatherComparison, setWeatherComparison] = useState({
@@ -825,25 +1135,31 @@ function App() {
     marbella: null
   })
   const [spotPrices, setSpotPrices] = useState({
-    SE1: { today: null, tomorrow: null },
-    SE2: { today: null, tomorrow: null },
-    SE3: { today: null, tomorrow: null },
-    SE4: { today: null, tomorrow: null }
+    SE1: { today: null, tomorrow: null, yesterday: null, history: [] },
+    SE2: { today: null, tomorrow: null, yesterday: null, history: [] },
+    SE3: { today: null, tomorrow: null, yesterday: null, history: [] },
+    SE4: { today: null, tomorrow: null, yesterday: null, history: [] }
   })
 
   const fetchSpotPrices = async () => {
     const areaEntries = await Promise.all(
       SPOT_PRICE_AREAS.map(async (area) => {
         try {
-          const [today, tomorrow] = await Promise.all([
-            fetchSpotPriceAverageForDate(area, 0),
+          const [historyEntries, tomorrow] = await Promise.all([
+            Promise.all(HISTORY_DAY_OFFSETS.map(async (offset) => ({
+              date: getCalendarDateString(offset, SPOT_PRICE_TIME_ZONE),
+              label: getShortWeekdayLabel(offset, SPOT_PRICE_TIME_ZONE),
+              value: await fetchSpotPriceAverageForDate(area, offset)
+            }))),
             fetchSpotPriceAverageForDate(area, 1)
           ])
+          const today = historyEntries[historyEntries.length - 1]?.value ?? null
+          const yesterday = historyEntries[historyEntries.length - 2]?.value ?? null
 
-          return [area, { today, tomorrow }]
+          return [area, { today, tomorrow, yesterday, history: historyEntries }]
         } catch (error) {
           console.error(`Error fetching spot prices for ${area}:`, error)
-          return [area, { today: null, tomorrow: null }]
+          return [area, { today: null, tomorrow: null, yesterday: null, history: [] }]
         }
       })
     )
@@ -864,9 +1180,32 @@ function App() {
         label: worldHighlights?.oilPrice?.label ?? 'Brentolja',
         date: worldHighlights?.oilPrice?.date ?? '',
         usdPerBarrel: worldHighlights?.oilPrice?.usdPerBarrel ?? null,
+        previousUsdPerBarrel: worldHighlights?.oilPrice?.previousUsdPerBarrel ?? null,
         sekPerBarrel: worldHighlights?.oilPrice?.usdPerBarrel && rates.usdToSek
           ? worldHighlights.oilPrice.usdPerBarrel * rates.usdToSek
-          : null
+          : null,
+        previousSekPerBarrel: worldHighlights?.oilPrice?.previousUsdPerBarrel && rates.previous?.usdToSek
+          ? worldHighlights.oilPrice.previousUsdPerBarrel * rates.previous.usdToSek
+          : null,
+        open: worldHighlights?.oilPrice?.open ?? null,
+        high: worldHighlights?.oilPrice?.high ?? null,
+        low: worldHighlights?.oilPrice?.low ?? null,
+        historyUsd: Array.isArray(worldHighlights?.oilPrice?.history)
+          ? worldHighlights.oilPrice.history.map((entry) => ({
+            ...entry,
+            label: entry?.date ? new Intl.DateTimeFormat('sv-SE', { weekday: 'short' }).format(new Date(`${entry.date}T12:00:00`)).replace('.', '') : '',
+            value: entry?.usdPerBarrel ?? null
+          }))
+          : [],
+        historySek: Array.isArray(worldHighlights?.oilPrice?.history)
+          ? worldHighlights.oilPrice.history.map((entry) => ({
+            ...entry,
+            label: entry?.date ? new Intl.DateTimeFormat('sv-SE', { weekday: 'short' }).format(new Date(`${entry.date}T12:00:00`)).replace('.', '') : '',
+            value: Number.isFinite(entry?.usdPerBarrel) && Number.isFinite(rates.usdToSek)
+              ? entry.usdPerBarrel * rates.usdToSek
+              : null
+          }))
+          : []
       })
       setNewsFlashItems(Array.isArray(worldHighlights?.news) ? worldHighlights.news : [])
       setWeatherComparison({
@@ -876,6 +1215,13 @@ function App() {
     } catch (error) {
       console.error('Error fetching world snapshot:', error)
     }
+  }
+
+  const toggleCardFlip = (cardKey) => {
+    setFlippedCards((current) => ({
+      ...current,
+      [cardKey]: !current[cardKey]
+    }))
   }
 
   useEffect(() => {
@@ -920,7 +1266,10 @@ function App() {
 
   const fetchMovieDetails = async () => {
     try {
+      activeMovieRequestRef.current += 1
+      const requestId = activeMovieRequestRef.current
       setLoading(true)
+      setIsLoadingRelatedMovies(false)
       setAnswer('')
       setAnswerImage(null)
       setAnswerImageAlt('')
@@ -937,22 +1286,60 @@ function App() {
 
       if (!trimmedTitle) {
         setAnswer('Skriv en filmtitel först.')
+        setIsLoadingRelatedMovies(false)
         setLoading(false)
         return
       }
 
       const serverPayload = await fetchMovieDetailsFromServer(trimmedTitle)
+      const canUseLocalFallback = Boolean(LOCAL_OMDB_API_KEY || LOCAL_TMDB_API_KEY)
 
       if (serverPayload) {
         if (serverPayload.ok && serverPayload.movie) {
           setMovieResult(serverPayload.movie)
+          setIsLoadingRelatedMovies(false)
           setLoading(false)
+
+          if (serverPayload.movie.supportsRelatedMovies) {
+            setIsLoadingRelatedMovies(true)
+
+            void fetchMovieDetailsFromServer(trimmedTitle, { relatedOnly: true })
+              .then((relatedPayload) => {
+                if (activeMovieRequestRef.current !== requestId || !relatedPayload?.ok) {
+                  return
+                }
+
+                setMovieResult((currentMovie) => {
+                  if (!currentMovie) {
+                    return currentMovie
+                  }
+
+                  return {
+                    ...currentMovie,
+                    relatedMovies: Array.isArray(relatedPayload.relatedMovies) ? relatedPayload.relatedMovies : currentMovie.relatedMovies
+                  }
+                })
+              })
+              .catch((error) => {
+                console.error('Error fetching related movies in background:', error)
+              })
+              .finally(() => {
+                if (activeMovieRequestRef.current === requestId) {
+                  setIsLoadingRelatedMovies(false)
+                }
+              })
+          }
+
           return
         }
 
-        setAnswer(serverPayload.error ?? 'Kunde inte hitta filmen. Kontrollera titeln och prova igen.')
-        setLoading(false)
-        return
+        if (!canUseLocalFallback || serverPayload.code === 'MISSING_CONFIG') {
+          setAnswer(serverPayload.error ?? 'Kunde inte hitta filmen. Kontrollera titeln och prova igen.')
+          setIsLoadingRelatedMovies(false)
+          setIsLoadingRelatedMovies(false)
+          setLoading(false)
+          return
+        }
       }
 
       if (!LOCAL_OMDB_API_KEY && !LOCAL_TMDB_API_KEY) {
@@ -965,6 +1352,7 @@ function App() {
           'VITE_OMDB_API_KEY=din_omdb_nyckel\n' +
           'VITE_TMDB_API_KEY=din_tmdb_nyckel'
         )
+        setIsLoadingRelatedMovies(false)
         setLoading(false)
         return
       }
@@ -1007,6 +1395,7 @@ function App() {
             ? `Kunde inte hämta filmdata.\n\n${notes.join('\n')}`
             : 'Kunde inte hitta filmen. Kontrollera titeln och prova igen.'
         )
+        setIsLoadingRelatedMovies(false)
         setLoading(false)
         return
       }
@@ -1026,16 +1415,20 @@ function App() {
         poster: omdbMovie?.poster ?? '',
         imdbRating: omdbMovie?.imdbRating ?? null,
         rottenTomatoesRating: omdbMovie?.rottenTomatoesRating ?? null,
+        relatedMovies: [],
+        supportsRelatedMovies: false,
         providers,
         hasStreamingOptions,
         streamingLink: tmdbMovie?.link ?? null,
         notes
       })
+      setIsLoadingRelatedMovies(false)
       setLoading(false)
     } catch (error) {
       console.error('Error fetching movie details:', error)
       setAnswer('Något gick fel vid hämtning av filmdata. Försök igen senare.')
       setMovieResult(null)
+      setIsLoadingRelatedMovies(false)
       setLoading(false)
     }
   }
@@ -1074,6 +1467,7 @@ function App() {
     }
 
     setMovieResult(null)
+    setIsLoadingRelatedMovies(false)
 
     if (!question) {
       setAnswer(questionType === 'movie' ? 'Skriv en filmtitel först.' : 'Skriv en fråga först 🙂')
@@ -1090,6 +1484,272 @@ function App() {
 
   const isBmiQuestion = questionType === 'bmi'
   const isMovieQuestion = questionType === 'movie'
+  const marketCards = [
+    {
+      key: 'eur',
+      symbol: '€',
+      label: 'EUR till SEK',
+      currentValue: exchangeRates.eurToSek,
+      previousValue: exchangeRates.previous?.eurToSek ?? null,
+      displayValue: exchangeRates.eurToSek !== null ? `${formatNumber(exchangeRates.eurToSek, 2)} kr` : '—',
+      previousDisplayValue: exchangeRates.previous?.eurToSek !== null ? `${formatNumber(exchangeRates.previous.eurToSek, 2)} kr` : '—',
+      sublabel: '1 EUR',
+      history: exchangeRates.history?.eur ?? [],
+      detailLines: [
+        `Senast uppdaterad ${exchangeRates.date || '—'}`,
+        `I går ${exchangeRates.previousDate || '—'}: ${exchangeRates.previous?.eurToSek !== null ? `${formatNumber(exchangeRates.previous.eurToSek, 2)} kr` : '—'}`
+      ]
+    },
+    {
+      key: 'usd',
+      symbol: '$',
+      label: 'USD till SEK',
+      currentValue: exchangeRates.usdToSek,
+      previousValue: exchangeRates.previous?.usdToSek ?? null,
+      displayValue: exchangeRates.usdToSek !== null ? `${formatNumber(exchangeRates.usdToSek, 2)} kr` : '—',
+      previousDisplayValue: exchangeRates.previous?.usdToSek !== null ? `${formatNumber(exchangeRates.previous.usdToSek, 2)} kr` : '—',
+      sublabel: '1 USD',
+      history: exchangeRates.history?.usd ?? [],
+      detailLines: [
+        `Senast uppdaterad ${exchangeRates.date || '—'}`,
+        `I går ${exchangeRates.previousDate || '—'}: ${exchangeRates.previous?.usdToSek !== null ? `${formatNumber(exchangeRates.previous.usdToSek, 2)} kr` : '—'}`
+      ]
+    },
+    {
+      key: 'gbp',
+      symbol: '£',
+      label: 'GBP till SEK',
+      currentValue: exchangeRates.gbpToSek,
+      previousValue: exchangeRates.previous?.gbpToSek ?? null,
+      displayValue: exchangeRates.gbpToSek !== null ? `${formatNumber(exchangeRates.gbpToSek, 2)} kr` : '—',
+      previousDisplayValue: exchangeRates.previous?.gbpToSek !== null ? `${formatNumber(exchangeRates.previous.gbpToSek, 2)} kr` : '—',
+      sublabel: '1 GBP',
+      history: exchangeRates.history?.gbp ?? [],
+      detailLines: [
+        `Senast uppdaterad ${exchangeRates.date || '—'}`,
+        `I går ${exchangeRates.previousDate || '—'}: ${exchangeRates.previous?.gbpToSek !== null ? `${formatNumber(exchangeRates.previous.gbpToSek, 2)} kr` : '—'}`
+      ]
+    },
+    {
+      key: 'brent',
+      symbol: 'BRENT',
+      label: oilPrice.label,
+      currentValue: oilPrice.usdPerBarrel,
+      previousValue: oilPrice.previousUsdPerBarrel,
+      displayValue: oilPrice.usdPerBarrel !== null ? `${formatNumber(oilPrice.usdPerBarrel, 2)} USD` : '—',
+      previousDisplayValue: oilPrice.previousUsdPerBarrel !== null ? `${formatNumber(oilPrice.previousUsdPerBarrel, 2)} USD` : '—',
+      sublabel: oilPrice.sekPerBarrel !== null ? `≈ ${formatNumber(oilPrice.sekPerBarrel, 0)} kr/fat` : 'per fat',
+      history: oilPrice.historyUsd ?? [],
+      detailLines: [
+        `I går: ${oilPrice.previousUsdPerBarrel !== null ? `${formatNumber(oilPrice.previousUsdPerBarrel, 2)} USD` : '—'}`,
+        `Öppning ${oilPrice.open !== null ? `${formatNumber(oilPrice.open, 2)} USD` : '—'}`,
+        `Dagshögsta ${oilPrice.high !== null ? `${formatNumber(oilPrice.high, 2)} USD` : '—'}`,
+        `Dagslägsta ${oilPrice.low !== null ? `${formatNumber(oilPrice.low, 2)} USD` : '—'}`
+      ]
+    }
+  ]
+  const electricityCards = [
+    { area: 'SE1', name: 'Luleå', ...spotPrices.SE1 },
+    { area: 'SE2', name: 'Sundsvall', ...spotPrices.SE2 },
+    { area: 'SE3', name: 'Stockholm', ...spotPrices.SE3 },
+    { area: 'SE4', name: 'Malmö', ...spotPrices.SE4 }
+  ]
+  const weatherCards = [
+    weatherComparison.ostersund ? weatherComparison.ostersund : { key: 'ostersund', name: 'Östersund' },
+    weatherComparison.marbella ? weatherComparison.marbella : { key: 'marbella', name: 'Marbella' }
+  ]
+  const infoHighlights = [
+    {
+      title: 'Frontend',
+      meta: 'React 19 + Hooks',
+      text: 'React 19, React DOM och hooks driver gränssnittet, state och de interaktiva korten.'
+    },
+    {
+      title: 'Serverlager',
+      meta: 'Vercel Functions',
+      text: 'Vercel Functions används som tunt backend-lager för filmdata, olja och nyhetsflash.'
+    },
+    {
+      title: 'Bygg & deploy',
+      meta: 'Vite + GitHub + Vercel',
+      text: 'Vite bygger appen, Node.js kör verktygen lokalt och Vercel deployar från GitHub.'
+    },
+    {
+      title: 'AI & workflow',
+      meta: 'Codex + BMAD',
+      text: 'Codex användes i kodningen och repo:t innehåller BMAD-artifakter för planering och implementation.'
+    }
+  ]
+  const weatherLocationDetails = {
+    ostersund: {
+      region: 'Jämtland, Sverige',
+      vibe: 'Fjällnära stad med tydliga årstider, kallare luft och ofta friskare vinterkänsla.',
+      readout: 'Bra att hålla koll på när det blåser eller när temperaturen känns betydligt lägre än termometern visar.'
+    },
+    marbella: {
+      region: 'Costa del Sol, Spanien',
+      vibe: 'Medelhavskust med mildare vintrar, mer solchanser och ofta torrare luft än hemma.',
+      readout: 'Intressant att jämföra mot Östersund när man vill se värmeskillnad, regnrisk och om vinden sabbar uteserveringsläget.'
+    }
+  }
+  const techHighlights = [
+    {
+      title: 'React + Hooks',
+      text: 'Driver hela UI:t och all state i appen.',
+      details: 'useState håller reda på frågor, livekort, flip-status och filmresultat. useEffect används för klockan och för att starta hämtningar när appen laddas.',
+      learnMoreLabel: 'react.dev/learn',
+      learnMoreUrl: 'https://react.dev/learn'
+    },
+    {
+      title: 'Vite',
+      text: 'Lokal utveckling, snabb build och proxy till lokala API-rutter.',
+      details: 'Vite gör att frontend känns snabb i utveckling och hanterar produktionsbygget inför Vercel. I repo:t finns också en lokal brygga så att /api/world och filmanrop fungerar under npm run dev.',
+      learnMoreLabel: 'vite.dev/guide',
+      learnMoreUrl: 'https://vite.dev/guide/'
+    },
+    {
+      title: 'Vercel Functions',
+      text: 'Serverkod för film, Brentolja och nyhetsflash.',
+      details: 'Funktionerna används för sådant som inte borde ligga öppet i browsern, till exempel privata API-nycklar och hämtning av data som är mer robust på serversidan.',
+      learnMoreLabel: 'vercel.com/docs/functions',
+      learnMoreUrl: 'https://vercel.com/docs/functions'
+    },
+    {
+      title: 'Wikipedia API',
+      text: 'Snabba faktasvar och bilder till generell fråga.',
+      details: 'Appen använder både sök och summary-endpointen för att hitta rätt ämne, korta ner texten och plocka en passande bild när en sådan finns.',
+      learnMoreLabel: 'mediawiki.org/wiki/API:REST_API',
+      learnMoreUrl: 'https://www.mediawiki.org/wiki/API:REST_API'
+    },
+    {
+      title: 'OMDb + TMDB',
+      text: 'Filmbetyg, posters, svenska streamingtjänster och uppföljare.',
+      details: 'OMDb står främst för IMDb- och Rotten Tomatoes-betyg medan TMDB hjälper till med streaming i Sverige. Jag har också lagt på tolerans för stavfel och en jämförelserad för flera filmer i samma serie.',
+      learnMoreLabel: 'omdbapi.com / developer.themoviedb.org',
+      learnMoreUrl: 'https://developer.themoviedb.org/docs/getting-started'
+    },
+    {
+      title: 'Frankfurter + Elpriset just nu',
+      text: 'Valutor och elpriser med dag-jämförelser.',
+      details: 'Valutakorten visar dagens nivå mot gårdagen och elpriserna bygger på dagliga medelvärden i öre per kWh. Historiken används för små trendgrafer i korten.',
+      learnMoreLabel: 'frankfurter.dev / elprisetjustnu.se',
+      learnMoreUrl: 'https://frankfurter.dev/docs/'
+    },
+    {
+      title: 'Open-Meteo',
+      text: 'Väderduell med temperatur, vind, regn, UV och tider för sol.',
+      details: 'Väderkorten hämtar både nuvärden och dagsdata som max/min, nederbördsrisk, luftfuktighet och solens upp- och nedgång för att göra jämförelsen mer levande.',
+      learnMoreLabel: 'open-meteo.com/en/docs',
+      learnMoreUrl: 'https://open-meteo.com/en/docs'
+    },
+    {
+      title: 'Yahoo Finance + RSS',
+      text: 'Brenttrend och nyhetsflash.',
+      details: 'Brentoljan kommer från Yahoo Finances chart-data och nyhetsflashen sammanställs från RSS så att världen-sektionen känns mer som en levande överblick än en statisk lista.',
+      learnMoreLabel: 'finance chart / rss spec',
+      learnMoreUrl: 'https://www.rssboard.org/rss-specification'
+    },
+    {
+      title: 'AI-stöd i bygget',
+      text: 'Codex och BMAD-artifakter hjälpte utvecklingsflödet.',
+      details: 'Själva appen kör inte AI i produktion, men i byggprocessen användes AI-stöd för kodning, tekniska artefakter och iterationer. Det märks främst i hur snabbt funktioner, polish och refaktorering kunnat göras i samma repo.',
+      learnMoreLabel: 'OpenAI platform docs',
+      learnMoreUrl: 'https://platform.openai.com/docs'
+    },
+    {
+      title: 'GitHub + Vercel',
+      text: 'Versionshantering och deployflöde.',
+      details: 'GitHub håller kodhistoriken, Vercel bygger och deployar när rätt branch pushas. Det gör att frontend och serverfunktioner kan skickas tillsammans i samma deploy.',
+      learnMoreLabel: 'vercel.com/docs/git',
+      learnMoreUrl: 'https://vercel.com/docs/git'
+    }
+  ]
+  const patternHighlights = [
+    {
+      title: 'Komponentdriven UI',
+      text: 'Allt ligger i återanvändbara delar och sektioner.',
+      details: 'Appen är byggd som en enda React-app där olika vyer, kort och resultat presenteras via komponentliknande JSX-block och delad state i samma träd.'
+    },
+    {
+      title: 'Client state med hooks',
+      text: 'useState och useEffect håller ihop live-data och interaktion.',
+      details: 'Frågetyp, filmresultat, trendkort, nyheter, väder och klocka hålls i lokal komponent-state. Det gör appen snabb utan extern state manager.'
+    },
+    {
+      title: 'Server-facade / BFF-light',
+      text: 'Klienten går via Vercel Functions när nycklar eller robustare hämtning behövs.',
+      details: 'Det här mönstret skyddar API-nycklar bättre, ger central felhantering och låter frontend slippa känna till alla externa svarformat.'
+    },
+    {
+      title: 'Resilient fetching',
+      text: 'Flera funktioner har fallbackar i stället för att dö helt.',
+      details: 'Appen provar serverväg först för film, använder flera sökvarianter, klarar saknade datapunkter och visar fallbacktext när en datakälla inte svarar.'
+    },
+    {
+      title: 'Derived data',
+      text: 'Historik, trender och jämförelser räknas fram ovanpå rådata.',
+      details: 'Valutaförändring, börslik +/-, eltrender, oljehistorik och väderjämförelse är inte hårdkodade utan beräknas i klienten från hämtade värden.'
+    },
+    {
+      title: 'Progressive disclosure',
+      text: 'Framsida först, mer info på baksidan.',
+      details: 'Flipkorten används som ett disclosure-mönster: det viktigaste syns direkt och detaljerna finns ett klick bort, vilket håller översikten renare.'
+    }
+  ]
+  const toolingHighlights = [
+    {
+      title: 'VS Code',
+      text: 'Redigeringsmiljö för kod, filer och iteration.',
+      details: 'Utvecklingsflödet här utgår från en editor-baserad arbetsyta där filer, env-vars och artefakter ligger i samma repo och kan itereras snabbt.'
+    },
+    {
+      title: 'Codex',
+      text: 'AI-assisterad kodning, refaktorering och implementation.',
+      details: 'Codex användes i själva utvecklingsarbetet för att analysera repo:t, skriva kod, verifiera ändringar och föra funktioner från idé till färdig implementation.'
+    },
+    {
+      title: 'BMAD-artifakter',
+      text: 'Planerings- och implementationsstöd i repo:t.',
+      details: 'Mappar som .agents, _bmad och _bmad-output visar att repo:t inte bara innehåller appkod utan också ett strukturstöd för stories, tech specs och agentworkflow.'
+    },
+    {
+      title: 'Node.js + npm',
+      text: 'Kör verktygskedjan lokalt.',
+      details: 'Node.js används som runtime för verktyg, Vite och lokala script. npm driver kommandon som dev, build och lint i projektet.'
+    },
+    {
+      title: 'ESLint',
+      text: 'Kodkvalitet och snabb feedback.',
+      details: 'Linting används som ett skyddsnät efter förändringar så att JSX, hooks och allmän kodstruktur håller ihop innan deploy.'
+    },
+    {
+      title: 'GitHub',
+      text: 'Versionshantering och samlingspunkt för deploy.',
+      details: 'Koden pushas till GitHub och fungerar som källa för Vercel-deploy, historik och versionsspårning.'
+    }
+  ]
+  const modalOverviewGridStyle = {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(185px, 220px))',
+    justifyContent: 'center',
+    gap: '12px',
+    margin: '0 auto 24px auto',
+    maxWidth: '520px',
+    alignItems: 'stretch'
+  }
+  const modalDetailGridStyle = {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 230px))',
+    justifyContent: 'center',
+    gap: '12px',
+    margin: '0 auto 18px auto',
+    maxWidth: '520px',
+    alignItems: 'start'
+  }
+  const sectionWrapperStyle = {
+    width: '100%',
+    maxWidth: APP_SECTION_MAX_WIDTH
+  }
 
   return (
     <div style={{
@@ -1110,10 +1770,11 @@ function App() {
           border: '1px solid #a2a9b1',
           boxShadow: '0 1px 3px rgba(0, 0, 0, 0.08)',
           padding: 'clamp(18px, 4vw, 28px)',
-          maxWidth: '540px',
+          maxWidth: APP_SECTION_MAX_WIDTH,
           width: '100%',
           position: 'relative'
         }}>
+        <div style={{ width: '100%', maxWidth: '620px', margin: '0 auto' }}>
         <div style={{ position: 'absolute', top: '15px', right: '15px' }}>
           <button
             onClick={() => setShowInfo(!showInfo)}
@@ -1183,10 +1844,11 @@ function App() {
           padding: '12px',
           marginBottom: '20px'
         }}>
-          <div style={{ display: 'flex', gap: '15px', flexWrap: 'wrap', justifyContent: 'center' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '10px' }}>
             <label style={{
               display: 'flex',
               alignItems: 'center',
+              justifyContent: 'center',
               cursor: 'pointer',
               gap: '8px',
               padding: '10px 14px',
@@ -1221,13 +1883,14 @@ function App() {
             <label style={{
               display: 'flex',
               alignItems: 'center',
+              justifyContent: 'center',
               cursor: 'pointer',
               gap: '8px',
               padding: '10px 14px',
               borderRadius: '999px',
-              background: questionType === 'bmi' ? '#eef5f1' : '#fff',
+              background: questionType === 'bmi' ? '#e9f1f8' : '#fff',
               color: '#202122',
-              border: `1px solid ${questionType === 'bmi' ? '#4f8c6d' : '#d2dbe4'}`,
+              border: `1px solid ${questionType === 'bmi' ? '#2f6fa3' : '#d2dbe4'}`,
               boxShadow: 'none'
             }}>
               <input
@@ -1255,6 +1918,7 @@ function App() {
             <label style={{
               display: 'flex',
               alignItems: 'center',
+              justifyContent: 'center',
               cursor: 'pointer',
               gap: '8px',
               padding: '10px 14px',
@@ -1405,7 +2069,7 @@ function App() {
               }}>
                 <p style={{ color: '#6b7280', fontSize: '12px', margin: '0 0 5px 0' }}>Ditt BMI</p>
                 <h2 style={{ color: '#2f6fa3', fontSize: '36px', fontWeight: '700', margin: '0 0 10px 0' }}>{bmi}</h2>
-                <p style={{ color: '#4f8c6d', fontSize: '14px', fontWeight: '600', margin: '0' }}>{bmiClassification}</p>
+                <p style={{ color: '#2f6fa3', fontSize: '14px', fontWeight: '600', margin: '0' }}>{bmiClassification}</p>
               </div>
             )}
           </div>
@@ -1443,13 +2107,34 @@ function App() {
           {loading ? 'Laddar...' : questionType === 'bmi' ? 'Beräkna BMI' : questionType === 'movie' ? 'Sök film' : 'Få svar'}
         </button>
 
+        {loading && isMovieQuestion && (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '12px',
+            padding: '12px 14px',
+            marginBottom: '20px',
+            borderRadius: '12px',
+            background: '#f8fbff',
+            border: '1px solid #dbe5ee',
+            color: '#4b5563'
+          }}>
+            <span className="loading-spinner loading-spinner-large" aria-hidden="true" />
+            <div style={{ textAlign: 'left' }}>
+              <p style={{ margin: '0 0 2px 0', fontSize: '13px', fontWeight: '700', color: '#1f4b78' }}>Filmen letas fram</p>
+              <p style={{ margin: '0', fontSize: '12px', lineHeight: '1.5' }}>Vi matchar titel, betyg och streaming just nu.</p>
+            </div>
+          </div>
+        )}
+
         {isMovieQuestion && movieResult && (
           <div style={{
-            background: '#f1fbf4',
+            background: '#f4f7fb',
             borderRadius: '12px',
             padding: '20px',
-            border: '1px solid #d9ebe0',
-            borderLeft: '5px solid #2f855a',
+            border: '1px solid #dbe5ee',
+            borderLeft: '5px solid #2f6fa3',
             marginBottom: '20px'
           }}>
             <div style={{
@@ -1475,11 +2160,11 @@ function App() {
                   width: '120px',
                   minHeight: '180px',
                   borderRadius: '10px',
-                  background: 'linear-gradient(135deg, #d9ebe0 0%, #c4decf 100%)',
+                  background: 'linear-gradient(135deg, #edf3f8 0%, #dbe5ee 100%)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  color: '#2f855a',
+                  color: '#2f6fa3',
                   fontSize: '12px',
                   fontWeight: '700',
                   textAlign: 'center',
@@ -1494,7 +2179,7 @@ function App() {
                 <div style={{ marginBottom: '12px' }}>
                   <h2 style={{ margin: '0 0 4px 0', fontSize: '26px', color: '#1f2937' }}>{movieResult.title}</h2>
                   <p style={{ margin: '0', color: '#4b5563', fontSize: '14px' }}>
-                    {movieResult.year || 'Ar okant'}
+                    {movieResult.year || 'År okänt'}
                     {movieResult.genre ? ` - ${movieResult.genre}` : ''}
                   </p>
                 </div>
@@ -1527,7 +2212,7 @@ function App() {
                 )}
 
                 <div style={{ marginBottom: '12px' }}>
-                  <p style={{ margin: '0 0 8px 0', fontSize: '14px', fontWeight: '700', color: '#2f855a' }}>
+                  <p style={{ margin: '0 0 8px 0', fontSize: '14px', fontWeight: '700', color: '#2f6fa3' }}>
                     Streaming i Sverige
                   </p>
                   {MOVIE_PROVIDER_SECTIONS.filter(({ key }) => movieResult.providers[key]?.length > 0).length > 0 ? (
@@ -1541,7 +2226,7 @@ function App() {
                     </div>
                   ) : (
                     <p style={{ margin: '0', fontSize: '14px', color: '#6b7280' }}>
-                      Ingen streaming eller butikstjanst hittades i Sverige just nu.
+                      Ingen streaming eller butikstjänst hittades i Sverige just nu.
                     </p>
                   )}
                 </div>
@@ -1557,7 +2242,7 @@ function App() {
                       justifyContent: 'center',
                       padding: '10px 14px',
                       borderRadius: '10px',
-                      background: 'linear-gradient(135deg, #2f855a 0%, #276749 100%)',
+                      background: 'linear-gradient(180deg, #447ff5 0%, #3366cc 100%)',
                       color: 'white',
                       textDecoration: 'none',
                       fontSize: '13px',
@@ -1565,7 +2250,7 @@ function App() {
                       marginBottom: '12px'
                     }}
                   >
-                    Oppna streaminglank
+                    Öppna streaminglänk
                   </a>
                 )}
 
@@ -1584,6 +2269,138 @@ function App() {
                   </div>
                 )}
 
+                {movieResult.relatedMovies?.length > 1 && (
+                  <div style={{ marginBottom: '14px' }}>
+                    <p style={{ margin: '0 0 8px 0', fontSize: '14px', fontWeight: '700', color: '#2f6fa3' }}>
+                      Filmserie att jämföra
+                    </p>
+                    <p style={{ margin: '0 0 10px 0', fontSize: '12px', color: '#64748b', lineHeight: '1.55' }}>
+                      Hittade {movieResult.relatedMovies.length} träffar i samma serie eller närliggande filmer. Svep sidled och tryck på ett kort för mer info.
+                    </p>
+                    <div style={{
+                      display: 'grid',
+                      gridAutoFlow: 'column',
+                      gridAutoColumns: 'minmax(195px, 225px)',
+                      gap: '10px',
+                      overflowX: 'auto',
+                      paddingBottom: '4px'
+                    }}>
+                      {movieResult.relatedMovies.map((relatedMovie) => (
+                        <FlipCard
+                          key={`${relatedMovie.title}-${relatedMovie.year}`}
+                          minHeight={226}
+                          flipped={Boolean(flippedCards[`movie-related-${relatedMovie.title}-${relatedMovie.year}`])}
+                          onToggle={() => toggleCardFlip(`movie-related-${relatedMovie.title}-${relatedMovie.year}`)}
+                          front={(
+                            <div style={{
+                              background: '#fff',
+                              border: '1px solid #dbe5ee',
+                              borderRadius: '12px',
+                              padding: '12px',
+                              textAlign: 'left',
+                              display: 'grid',
+                              gap: '10px'
+                            }}>
+                              <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+                                {relatedMovie.poster ? (
+                                  <img
+                                    src={relatedMovie.poster}
+                                    alt={relatedMovie.title}
+                                    style={{
+                                      width: '54px',
+                                      height: '78px',
+                                      borderRadius: '8px',
+                                      objectFit: 'cover',
+                                      flexShrink: 0
+                                    }}
+                                  />
+                                ) : (
+                                  <div style={{
+                                    width: '54px',
+                                    height: '78px',
+                                    borderRadius: '8px',
+                                    background: '#edf3f8',
+                                    color: '#2f6fa3',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    fontSize: '10px',
+                                    fontWeight: '700',
+                                    textAlign: 'center',
+                                    flexShrink: 0
+                                  }}>
+                                    Ingen poster
+                                  </div>
+                                )}
+                                <div style={{ minWidth: 0 }}>
+                                  <p style={{ margin: '0 0 4px 0', fontSize: '13px', fontWeight: '700', color: '#1f2937', lineHeight: '1.35' }}>{relatedMovie.title}</p>
+                                  <p style={{ margin: '0 0 6px 0', fontSize: '11px', color: '#6b7280' }}>{relatedMovie.year || 'År okänt'}</p>
+                                  <div style={{ display: 'grid', gap: '4px' }}>
+                                    <p style={{ margin: '0', fontSize: '11px', color: '#1f2937' }}>IMDb: <strong>{relatedMovie.imdbRating ?? 'Saknas'}</strong></p>
+                                    <p style={{ margin: '0', fontSize: '11px', color: '#1f2937' }}>RT: <strong>{relatedMovie.rottenTomatoesRating ?? 'Saknas'}</strong></p>
+                                  </div>
+                                </div>
+                              </div>
+                              {relatedMovie.genre && (
+                                <p style={{ margin: '0', fontSize: '11px', color: '#6b7280', lineHeight: '1.45' }}>{relatedMovie.genre}</p>
+                              )}
+                              <p style={{ margin: '0', fontSize: '10px', color: '#94a3b8', fontWeight: '700', letterSpacing: '0.03em', textTransform: 'uppercase' }}>
+                                Tryck för mer
+                              </p>
+                            </div>
+                          )}
+                          back={(
+                            <div style={{
+                              background: '#fff',
+                              border: '1px solid #dbe5ee',
+                              borderRadius: '12px',
+                              padding: '12px',
+                              textAlign: 'left',
+                              display: 'grid',
+                              gap: '8px',
+                              alignContent: 'start',
+                              height: '100%'
+                            }}>
+                              <div>
+                                <p style={{ margin: '0 0 4px 0', fontSize: '13px', fontWeight: '700', color: '#1f2937', lineHeight: '1.35' }}>{relatedMovie.title}</p>
+                                <p style={{ margin: '0', fontSize: '11px', color: '#6b7280' }}>{relatedMovie.year || 'År okänt'}</p>
+                              </div>
+                              {relatedMovie.plot ? (
+                                <p style={{ margin: '0', fontSize: '11px', color: '#475569', lineHeight: '1.55' }}>
+                                  {getShortText(relatedMovie.plot, 185)}
+                                </p>
+                              ) : (
+                                <p style={{ margin: '0', fontSize: '11px', color: '#94a3b8', lineHeight: '1.55' }}>
+                                  Ingen extra handling hittades för just den här delen.
+                                </p>
+                              )}
+                              <div style={{ display: 'grid', gap: '4px' }}>
+                                <p style={{ margin: '0', fontSize: '11px', color: '#1f2937' }}>Genre: <strong>{relatedMovie.genre || 'Saknas'}</strong></p>
+                                <p style={{ margin: '0', fontSize: '11px', color: '#1f2937' }}>IMDb: <strong>{relatedMovie.imdbRating ?? 'Saknas'}</strong></p>
+                                <p style={{ margin: '0', fontSize: '11px', color: '#1f2937' }}>RT: <strong>{relatedMovie.rottenTomatoesRating ?? 'Saknas'}</strong></p>
+                              </div>
+                            </div>
+                          )}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {isLoadingRelatedMovies && (
+                  <div style={{
+                    marginBottom: '14px',
+                    background: '#f8fbff',
+                    border: '1px solid #dbe5ee',
+                    borderRadius: '12px',
+                    padding: '12px 14px'
+                  }}>
+                    <p style={{ margin: '0', fontSize: '12px', color: '#64748b', lineHeight: '1.55' }}>
+                      Hämtar fler delar i filmserien för jämförelse...
+                    </p>
+                  </div>
+                )}
+
                 <p style={{ margin: '0', fontSize: '11px', color: '#6b7280' }}>
                   Betyg via OMDb. Streamingdata via TMDB watch providers, powered by JustWatch.
                 </p>
@@ -1594,11 +2411,11 @@ function App() {
 
         {!isBmiQuestion && answer && (
           <div style={{
-            background: '#f1fbf4',
+            background: '#f4f7fb',
             borderRadius: '12px',
             padding: '25px',
-            border: '1px solid #d9ebe0',
-            borderLeft: '5px solid #2f855a'
+            border: '1px solid #dbe5ee',
+            borderLeft: '5px solid #2f6fa3'
           }}>
             {answerImage && (
               <img
@@ -1606,10 +2423,13 @@ function App() {
                 alt={answerImageAlt || 'Illustration'}
                 style={{
                   width: '100%',
-                  maxHeight: '240px',
-                  objectFit: 'cover',
+                  maxHeight: '220px',
+                  objectFit: 'contain',
+                  background: '#fff',
                   borderRadius: '12px',
                   marginBottom: '16px',
+                  padding: '10px',
+                  boxSizing: 'border-box',
                   boxShadow: '0 8px 24px rgba(0, 0, 0, 0.12)'
                 }}
               />
@@ -1638,6 +2458,7 @@ function App() {
             )}
           </div>
         )}
+        </div>
       </div>
 
       {showInfo && (
@@ -1671,13 +2492,13 @@ function App() {
               <p style={{
                 fontSize: '28px',
                 fontWeight: '700',
-                color: '#2f855a',
+                color: '#2f6fa3',
                 margin: '0 0 10px 0'
               }}>Maxipedia</p>
               <p style={{
                 fontSize: '16px',
                 fontWeight: '600',
-                color: '#276749',
+                color: '#1f4b78',
                 margin: '0'
               }}>Snabbfrågor, film, el, världskoll och nyhetsflash i ett kort</p>
               <p style={{
@@ -1692,414 +2513,220 @@ function App() {
               borderTop: '2px solid #f0f0f0',
               paddingTop: '25px'
             }}>
-              <div style={{
-                display: 'grid',
-                gridTemplateColumns: '1fr 1fr',
-                gap: '12px',
-                marginBottom: '22px'
-              }}>
-                <div style={{
-                  background: '#f1fbf4',
-                  padding: '14px',
-                  borderRadius: '12px',
-                  borderLeft: '4px solid #2f855a'
-                }}>
-                  <p style={{ margin: '0 0 6px 0', fontWeight: '700', color: '#2f855a' }}>Det här kan du göra</p>
-                  <p style={{ margin: '0', color: '#555', fontSize: '12px', lineHeight: '1.6' }}>
-                    Ställa generella frågor, söka på filmtitlar, kolla elpris, valuta, väder, Brentolja och senaste nyhetsflashen.
-                  </p>
-                </div>
-                <div style={{
-                  background: '#f1fbf4',
-                  padding: '14px',
-                  borderRadius: '12px',
-                  borderLeft: '4px solid #2f855a'
-                }}>
-                  <p style={{ margin: '0 0 6px 0', fontWeight: '700', color: '#2f855a' }}>Datakällor</p>
-                  <p style={{ margin: '0', color: '#555', fontSize: '12px', lineHeight: '1.6' }}>
-                    Wikipedia, OMDb, TMDB, Elpriset just nu, Frankfurter, Open-Meteo, BBC RSS och Brent-data via Stooq.
-                  </p>
-                </div>
-                <div style={{
-                  background: '#f1fbf4',
-                  padding: '14px',
-                  borderRadius: '12px',
-                  borderLeft: '4px solid #2f855a'
-                }}>
-                  <p style={{ margin: '0 0 6px 0', fontWeight: '700', color: '#2f855a' }}>På Vercel</p>
-                  <p style={{ margin: '0', color: '#555', fontSize: '12px', lineHeight: '1.6' }}>
-                    Filmdelen använder serverfunktioner så att OMDb- och TMDB-nycklar kan hållas privata i projektets environment variables.
-                  </p>
-                </div>
-                <div style={{
-                  background: '#f1fbf4',
-                  padding: '14px',
-                  borderRadius: '12px',
-                  borderLeft: '4px solid #2f855a'
-                }}>
-                  <p style={{ margin: '0 0 6px 0', fontWeight: '700', color: '#2f855a' }}>Tips</p>
-                  <p style={{ margin: '0', color: '#555', fontSize: '12px', lineHeight: '1.6' }}>
-                    Testa svenska filmtitlar, felstavningar och korta faktasökningar. Världskoll uppdateras automatiskt när appen laddas.
-                  </p>
-                </div>
+              <div style={modalOverviewGridStyle}>
+                {infoHighlights.map((item) => (
+                  <div key={item.title} style={{
+                    background: 'linear-gradient(180deg, #f7fbff 0%, #eef4fa 100%)',
+                    border: '1px solid #dbe5ee',
+                    borderRadius: '14px',
+                    padding: '14px 14px 15px 14px',
+                    textAlign: 'center',
+                    minHeight: '122px',
+                    display: 'grid',
+                    gap: '6px',
+                    alignContent: 'start',
+                    boxSizing: 'border-box'
+                  }}>
+                    <p style={{
+                      margin: '0',
+                      fontSize: '10px',
+                      fontWeight: '800',
+                      color: '#64748b',
+                      letterSpacing: '0.08em',
+                      textTransform: 'uppercase'
+                    }}>
+                      {item.meta}
+                    </p>
+                    <p style={{ margin: '0 0 6px 0', fontSize: '12px', fontWeight: '800', color: '#2f6fa3', letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+                      {item.title}
+                    </p>
+                    <p style={{ margin: '0', color: '#475569', fontSize: '12px', lineHeight: '1.55' }}>
+                      {item.text}
+                    </p>
+                  </div>
+                ))}
               </div>
 
               <h3 style={{
                 fontSize: '18px',
                 fontWeight: '700',
                 color: '#333',
-                marginBottom: '15px'
-              }}>Teknik & komponenter</h3>
-              
-              <div style={{
-                display: 'grid',
-                gridTemplateColumns: '1fr 1fr',
-                gap: '12px',
-                fontSize: '13px',
-                lineHeight: '1.6'
-              }}>
-                <div style={{
-                  background: '#f1fbf4',
-                  padding: '12px',
-                  borderRadius: '10px',
-                  borderLeft: '4px solid #2f855a'
-                }}>
-                  <p style={{ margin: '0 0 4px 0', fontWeight: '600', color: '#2f855a' }}>React</p>
-                  <p style={{ margin: '0', color: '#555', fontSize: '12px' }}>UI-bibliotek för komponent-baserad arkitektur</p>
-                </div>
-                <div style={{
-                  background: '#f1fbf4',
-                  padding: '12px',
-                  borderRadius: '10px',
-                  borderLeft: '4px solid #2f855a'
-                }}>
-                  <p style={{ margin: '0 0 4px 0', fontWeight: '600', color: '#2f855a' }}>React Hooks</p>
-                  <p style={{ margin: '0', color: '#555', fontSize: '12px' }}>useState och useEffect för state-management</p>
-                </div>
-                <div style={{
-                  background: '#f1fbf4',
-                  padding: '12px',
-                  borderRadius: '10px',
-                  borderLeft: '4px solid #2f855a'
-                }}>
-                  <p style={{ margin: '0 0 4px 0', fontWeight: '600', color: '#2f855a' }}>JSX</p>
-                  <p style={{ margin: '0', color: '#555', fontSize: '12px' }}>Syntaktisk extension för HTML i JavaScript</p>
-                </div>
-                <div style={{
-                  background: '#f1fbf4',
-                  padding: '12px',
-                  borderRadius: '10px',
-                  borderLeft: '4px solid #2f855a'
-                }}>
-                  <p style={{ margin: '0 0 4px 0', fontWeight: '600', color: '#2f855a' }}>JavaScript ES6+</p>
-                  <p style={{ margin: '0', color: '#555', fontSize: '12px' }}>Modern JavaScript med arrows, async/await</p>
-                </div>
-                <div style={{
-                  background: '#f1fbf4',
-                  padding: '12px',
-                  borderRadius: '10px',
-                  borderLeft: '4px solid #2f855a'
-                }}>
-                  <p style={{ margin: '0 0 4px 0', fontWeight: '600', color: '#2f855a' }}>CSS Animations</p>
-                  <p style={{ margin: '0', color: '#555', fontSize: '12px' }}>Ticker-rörelse och små hover-effekter i UI:t</p>
-                </div>
-                <div style={{
-                  background: '#f1fbf4',
-                  padding: '12px',
-                  borderRadius: '10px',
-                  borderLeft: '4px solid #2f855a'
-                }}>
-                  <p style={{ margin: '0 0 4px 0', fontWeight: '600', color: '#2f855a' }}>CSS Gradients</p>
-                  <p style={{ margin: '0', color: '#555', fontSize: '12px' }}>Linear gradients för visuell stil</p>
-                </div>
-                <div style={{
-                  background: '#f1fbf4',
-                  padding: '12px',
-                  borderRadius: '10px',
-                  borderLeft: '4px solid #2f855a'
-                }}>
-                  <p style={{ margin: '0 0 4px 0', fontWeight: '600', color: '#2f855a' }}>Flexbox & CSS Grid</p>
-                  <p style={{ margin: '0', color: '#555', fontSize: '12px' }}>Layout-system för responsiv design</p>
-                </div>
-                <div style={{
-                  background: '#f1fbf4',
-                  padding: '12px',
-                  borderRadius: '10px',
-                  borderLeft: '4px solid #2f855a'
-                }}>
-                  <p style={{ margin: '0 0 4px 0', fontWeight: '600', color: '#2f855a' }}>Vercel Functions</p>
-                  <p style={{ margin: '0', color: '#555', fontSize: '12px' }}>Server-side hämtning för filmdata, Brentolja och nyhetsflash</p>
-                </div>
-                <div style={{
-                  background: '#f1fbf4',
-                  padding: '12px',
-                  borderRadius: '10px',
-                  borderLeft: '4px solid #2f855a'
-                }}>
-                  <p style={{ margin: '0 0 4px 0', fontWeight: '600', color: '#2f855a' }}>Fetch API</p>
-                  <p style={{ margin: '0', color: '#555', fontSize: '12px' }}>Asynkrona HTTP-förfrågningar från internet</p>
-                </div>
-                <div style={{
-                  background: '#f1fbf4',
-                  padding: '12px',
-                  borderRadius: '10px',
-                  borderLeft: '4px solid #2f855a'
-                }}>
-                  <p style={{ margin: '0 0 4px 0', fontWeight: '600', color: '#2f855a' }}>Wikipedia REST API</p>
-                  <p style={{ margin: '0', color: '#555', fontSize: '12px' }}>Söker upp ämnen och hämtar korta sammanfattningar från Wikipedia</p>
-                </div>
-                <div style={{
-                  background: '#f1fbf4',
-                  padding: '12px',
-                  borderRadius: '10px',
-                  borderLeft: '4px solid #2f855a'
-                }}>
-                  <p style={{ margin: '0 0 4px 0', fontWeight: '600', color: '#2f855a' }}>Wikipedia Summary API</p>
-                  <p style={{ margin: '0', color: '#555', fontSize: '12px' }}>Ger kortare och mer konsekventa svar för generella frågor</p>
-                </div>
-                <div style={{
-                  background: '#f1fbf4',
-                  padding: '12px',
-                  borderRadius: '10px',
-                  borderLeft: '4px solid #2f855a'
-                }}>
-                  <p style={{ margin: '0 0 4px 0', fontWeight: '600', color: '#2f855a' }}>Node.js</p>
-                  <p style={{ margin: '0', color: '#555', fontSize: '12px' }}>JavaScript runtime-miljö</p>
-                </div>
-                <div style={{
-                  background: '#f1fbf4',
-                  padding: '12px',
-                  borderRadius: '10px',
-                  borderLeft: '4px solid #2f855a'
-                }}>
-                  <p style={{ margin: '0 0 4px 0', fontWeight: '600', color: '#2f855a' }}>npm</p>
-                  <p style={{ margin: '0', color: '#555', fontSize: '12px' }}>Package manager för JavaScript</p>
-                </div>
-                <div style={{
-                  background: '#f1fbf4',
-                  padding: '12px',
-                  borderRadius: '10px',
-                  borderLeft: '4px solid #2f855a'
-                }}>
-                  <p style={{ margin: '0 0 4px 0', fontWeight: '600', color: '#2f855a' }}>Vite</p>
-                  <p style={{ margin: '0', color: '#555', fontSize: '12px' }}>Build tool för snabb utveckling</p>
-                </div>
-                <div style={{
-                  background: '#f1fbf4',
-                  padding: '12px',
-                  borderRadius: '10px',
-                  borderLeft: '4px solid #2f855a'
-                }}>
-                  <p style={{ margin: '0 0 4px 0', fontWeight: '600', color: '#2f855a' }}>ESLint</p>
-                  <p style={{ margin: '0', color: '#555', fontSize: '12px' }}>Kodkvalité och linting av JavaScript</p>
-                </div>
-                <div style={{
-                  background: '#f1fbf4',
-                  padding: '12px',
-                  borderRadius: '10px',
-                  borderLeft: '4px solid #2f855a'
-                }}>
-                  <p style={{ margin: '0 0 4px 0', fontWeight: '600', color: '#2f855a' }}>BBC RSS & Stooq</p>
-                  <p style={{ margin: '0', color: '#555', fontSize: '12px' }}>Ger nyhetsflash och Brentpris i världskoll-delen</p>
-                </div>
-                <div style={{
-                  background: '#f1fbf4',
-                  padding: '12px',
-                  borderRadius: '10px',
-                  borderLeft: '4px solid #2f855a'
-                }}>
-                  <p style={{ margin: '0 0 4px 0', fontWeight: '600', color: '#2f855a' }}>DOM API</p>
-                  <p style={{ margin: '0', color: '#555', fontSize: '12px' }}>Manipulering av HTML-element</p>
-                </div>
-                <div style={{
-                  background: '#f1fbf4',
-                  padding: '12px',
-                  borderRadius: '10px',
-                  borderLeft: '4px solid #2f855a'
-                }}>
-                  <p style={{ margin: '0 0 4px 0', fontWeight: '600', color: '#2f855a' }}>Event Handling</p>
-                  <p style={{ margin: '0', color: '#555', fontSize: '12px' }}>onClick, onKeyDown, onMouseOver etc</p>
-                </div>
-                <div style={{
-                  background: '#f1fbf4',
-                  padding: '12px',
-                  borderRadius: '10px',
-                  borderLeft: '4px solid #2f855a'
-                }}>
-                  <p style={{ margin: '0 0 4px 0', fontWeight: '600', color: '#2f855a' }}>Async/Await</p>
-                  <p style={{ margin: '0', color: '#555', fontSize: '12px' }}>Asynkron programmering för API-anrop</p>
-                </div>
-                <div style={{
-                  background: '#f1fbf4',
-                  padding: '12px',
-                  borderRadius: '10px',
-                  borderLeft: '4px solid #2f855a'
-                }}>
-                  <p style={{ margin: '0 0 4px 0', fontWeight: '600', color: '#2f855a' }}>JSON</p>
-                  <p style={{ margin: '0', color: '#555', fontSize: '12px' }}>Data-format från API-svar</p>
-                </div>
-                <div style={{
-                  background: '#f1fbf4',
-                  padding: '12px',
-                  borderRadius: '10px',
-                  borderLeft: '4px solid #2f855a'
-                }}>
-                  <p style={{ margin: '0 0 4px 0', fontWeight: '600', color: '#2f855a' }}>Template Literals</p>
-                  <p style={{ margin: '0', color: '#555', fontSize: '12px' }}>Backtick-strings för dynamisk text</p>
-                </div>
-                <div style={{
-                  background: '#f1fbf4',
-                  padding: '12px',
-                  borderRadius: '10px',
-                  borderLeft: '4px solid #2f855a'
-                }}>
-                  <p style={{ margin: '0 0 4px 0', fontWeight: '600', color: '#2f855a' }}>Arrow Functions</p>
-                  <p style={{ margin: '0', color: '#555', fontSize: '12px' }}>{'(=>)'} Moderne funktionssyntax</p>
-                </div>
-                <div style={{
-                  background: '#f1fbf4',
-                  padding: '12px',
-                  borderRadius: '10px',
-                  borderLeft: '4px solid #2f855a'
-                }}>
-                  <p style={{ margin: '0 0 4px 0', fontWeight: '600', color: '#2f855a' }}>State Management</p>
-                  <p style={{ margin: '0', color: '#555', fontSize: '12px' }}>Hantering av komponent-tillstånd</p>
-                </div>
-                <div style={{
-                  background: '#f1fbf4',
-                  padding: '12px',
-                  borderRadius: '10px',
-                  borderLeft: '4px solid #2f855a'
-                }}>
-                  <p style={{ margin: '0 0 4px 0', fontWeight: '600', color: '#2f855a' }}>Side Effects</p>
-                  <p style={{ margin: '0', color: '#555', fontSize: '12px' }}>useEffect för data-hämtning</p>
-                </div>
-                <div style={{
-                  background: '#f1fbf4',
-                  padding: '12px',
-                  borderRadius: '10px',
-                  borderLeft: '4px solid #2f855a'
-                }}>
-                  <p style={{ margin: '0 0 4px 0', fontWeight: '600', color: '#2f855a' }}>Conditional Rendering</p>
-                  <p style={{ margin: '0', color: '#555', fontSize: '12px' }}>Visa/göm UI baserat på state</p>
-                </div>
-                <div style={{
-                  background: '#f1fbf4',
-                  padding: '12px',
-                  borderRadius: '10px',
-                  borderLeft: '4px solid #2f855a'
-                }}>
-                  <p style={{ margin: '0 0 4px 0', fontWeight: '600', color: '#2f855a' }}>CSS Transforms</p>
-                  <p style={{ margin: '0', color: '#555', fontSize: '12px' }}>translateX, translateY, rotate, scale</p>
-                </div>
-                <div style={{
-                  background: '#f1fbf4',
-                  padding: '12px',
-                  borderRadius: '10px',
-                  borderLeft: '4px solid #2f855a'
-                }}>
-                  <p style={{ margin: '0 0 4px 0', fontWeight: '600', color: '#2f855a' }}>CSS Box Model</p>
-                  <p style={{ margin: '0', color: '#555', fontSize: '12px' }}>Padding, margin, border, shadow</p>
-                </div>
-                <div style={{
-                  background: '#f1fbf4',
-                  padding: '12px',
-                  borderRadius: '10px',
-                  borderLeft: '4px solid #2f855a'
-                }}>
-                  <p style={{ margin: '0 0 4px 0', fontWeight: '600', color: '#2f855a' }}>Responsive Design</p>
-                  <p style={{ margin: '0', color: '#555', fontSize: '12px' }}>mobil-anpassad layout</p>
-                </div>
-                <div style={{
-                  background: '#f1fbf4',
-                  padding: '12px',
-                  borderRadius: '10px',
-                  borderLeft: '4px solid #2f855a'
-                }}>
-                  <p style={{ margin: '0 0 4px 0', fontWeight: '600', color: '#2f855a' }}>Z-Index & Stacking</p>
-                  <p style={{ margin: '0', color: '#555', fontSize: '12px' }}>Lagring av element i 3D-perspektiv</p>
-                </div>
-                <div style={{
-                  background: '#f1fbf4',
-                  padding: '12px',
-                  borderRadius: '10px',
-                  borderLeft: '4px solid #2f855a'
-                }}>
-                  <p style={{ margin: '0 0 4px 0', fontWeight: '600', color: '#2f855a' }}>Position (Absolute/Fixed)</p>
-                  <p style={{ margin: '0', color: '#555', fontSize: '12px' }}>Precis placering av element</p>
-                </div>
-                <div style={{
-                  background: '#f1fbf4',
-                  padding: '12px',
-                  borderRadius: '10px',
-                  borderLeft: '4px solid #2f855a'
-                }}>
-                  <p style={{ margin: '0 0 4px 0', fontWeight: '600', color: '#2f855a' }}>String Interpolation</p>
-                  <p style={{ margin: '0', color: '#555', fontSize: '12px' }}>Dynamisk strängkonstruktion</p>
-                </div>
-                <div style={{
-                  background: '#f1fbf4',
-                  padding: '12px',
-                  borderRadius: '10px',
-                  borderLeft: '4px solid #2f855a'
-                }}>
-                  <p style={{ margin: '0 0 4px 0', fontWeight: '600', color: '#2f855a' }}>Input Validation</p>
-                  <p style={{ margin: '0', color: '#555', fontSize: '12px' }}>Kontroll av användarinmatning</p>
-                </div>
-                <div style={{
-                  background: '#f1fbf4',
-                  padding: '12px',
-                  borderRadius: '10px',
-                  borderLeft: '4px solid #2f855a'
-                }}>
-                  <p style={{ margin: '0 0 4px 0', fontWeight: '600', color: '#2f855a' }}>Date Object</p>
-                  <p style={{ margin: '0', color: '#555', fontSize: '12px' }}>Hantering av datum och tid</p>
-                </div>
-                <div style={{
-                  background: '#f1fbf4',
-                  padding: '12px',
-                  borderRadius: '10px',
-                  borderLeft: '4px solid #2f855a'
-                }}>
-                  <p style={{ margin: '0 0 4px 0', fontWeight: '600', color: '#2f855a' }}>Locale Formatting</p>
-                  <p style={{ margin: '0', color: '#555', fontSize: '12px' }}>toLocaleTimeString, toLocaleDateString</p>
-                </div>
-                <div style={{
-                  background: '#f1fbf4',
-                  padding: '12px',
-                  borderRadius: '10px',
-                  borderLeft: '4px solid #2f855a'
-                }}>
-                  <p style={{ margin: '0 0 4px 0', fontWeight: '600', color: '#2f855a' }}>setInterval/clearInterval</p>
-                  <p style={{ margin: '0', color: '#555', fontSize: '12px' }}>Repeterad exekvering av kod</p>
-                </div>
-                <div style={{
-                  background: '#f1fbf4',
-                  padding: '12px',
-                  borderRadius: '10px',
-                  borderLeft: '4px solid #2f855a'
-                }}>
-                  <p style={{ margin: '0 0 4px 0', fontWeight: '600', color: '#2f855a' }}>CORS</p>
-                  <p style={{ margin: '0', color: '#555', fontSize: '12px' }}>Cross-Origin Resource Sharing</p>
-                </div>
-                <div style={{
-                  background: '#f1fbf4',
-                  padding: '12px',
-                  borderRadius: '10px',
-                  borderLeft: '4px solid #2f855a'
-                }}>
-                  <p style={{ margin: '0 0 4px 0', fontWeight: '600', color: '#2f855a' }}>Error Handling</p>
-                  <p style={{ margin: '0', color: '#555', fontSize: '12px' }}>Try-catch och fallback-mekanismer</p>
-                </div>
-                <div style={{
-                  background: '#f1fbf4',
-                  padding: '12px',
-                  borderRadius: '10px',
-                  borderLeft: '4px solid #2f855a'
-                }}>
-                  <p style={{ margin: '0 0 4px 0', fontWeight: '600', color: '#2f855a' }}>Closures</p>
-                  <p style={{ margin: '0', color: '#555', fontSize: '12px' }}>Funktioner som lagrar scope</p>
-                </div>
+                marginBottom: '12px',
+                textAlign: 'center'
+              }}>Visuell teknikstack</h3>
+
+              <div style={modalDetailGridStyle}>
+                {techHighlights.map((item) => (
+                  <FlipCard
+                    key={item.title}
+                    minHeight={148}
+                    flipped={Boolean(flippedCards[`tech-${item.title}`])}
+                    onToggle={() => toggleCardFlip(`tech-${item.title}`)}
+                    front={(
+                      <div style={{
+                        background: '#f4f7fb',
+                        padding: '12px 13px',
+                        borderRadius: '12px',
+                        borderLeft: '4px solid #2f6fa3',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '6px',
+                        textAlign: 'left'
+                      }}>
+                        <div>
+                          <p style={{ margin: '0 0 5px 0', fontWeight: '700', color: '#2f6fa3', fontSize: '13px', lineHeight: '1.35' }}>{item.title}</p>
+                          <p style={{ margin: '0', color: '#555', fontSize: '11px', lineHeight: '1.45' }}>
+                            {item.text}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                    back={(
+                      <div style={{
+                        background: '#f4f7fb',
+                        padding: '12px 13px',
+                        borderRadius: '12px',
+                        borderLeft: '4px solid #2f6fa3',
+                        display: 'grid',
+                        gap: '8px',
+                        alignContent: 'start',
+                        height: '100%',
+                        textAlign: 'left'
+                      }}>
+                        <div>
+                          <p style={{ margin: '0 0 5px 0', fontWeight: '700', color: '#2f6fa3', fontSize: '13px', lineHeight: '1.35' }}>{item.title}</p>
+                          <p style={{ margin: '0', color: '#555', fontSize: '11px', lineHeight: '1.45' }}>{item.details}</p>
+                        </div>
+                        <a
+                          href={item.learnMoreUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          onClick={(event) => event.stopPropagation()}
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            padding: '7px 9px',
+                            borderRadius: '999px',
+                            background: '#fff',
+                            color: '#2f6fa3',
+                            textDecoration: 'none',
+                            fontSize: '10px',
+                            fontWeight: '700'
+                          }}
+                        >
+                          Läs vidare: {item.learnMoreLabel}
+                        </a>
+                      </div>
+                    )}
+                  />
+                ))}
+              </div>
+
+              <h3 style={{
+                fontSize: '18px',
+                fontWeight: '700',
+                color: '#333',
+                marginBottom: '12px',
+                textAlign: 'center'
+              }}>Designmönster i appen</h3>
+
+              <div style={modalDetailGridStyle}>
+                {patternHighlights.map((item) => (
+                  <FlipCard
+                    key={item.title}
+                    minHeight={148}
+                    flipped={Boolean(flippedCards[`pattern-${item.title}`])}
+                    onToggle={() => toggleCardFlip(`pattern-${item.title}`)}
+                    front={(
+                      <div style={{
+                        background: '#f8fbff',
+                        padding: '12px 13px',
+                        borderRadius: '12px',
+                        borderLeft: '4px solid #7aa5c7',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '6px',
+                        textAlign: 'left'
+                      }}>
+                        <div>
+                          <p style={{ margin: '0 0 5px 0', fontWeight: '700', color: '#1f4b78', fontSize: '13px', lineHeight: '1.35' }}>{item.title}</p>
+                          <p style={{ margin: '0', color: '#555', fontSize: '11px', lineHeight: '1.45' }}>{item.text}</p>
+                        </div>
+                      </div>
+                    )}
+                    back={(
+                      <div style={{
+                        background: '#f8fbff',
+                        padding: '12px 13px',
+                        borderRadius: '12px',
+                        borderLeft: '4px solid #7aa5c7',
+                        display: 'grid',
+                        gap: '8px',
+                        alignContent: 'start',
+                        height: '100%',
+                        textAlign: 'left'
+                      }}>
+                        <p style={{ margin: '0', fontWeight: '700', color: '#1f4b78', fontSize: '13px', lineHeight: '1.35' }}>{item.title}</p>
+                        <p style={{ margin: '0', color: '#555', fontSize: '11px', lineHeight: '1.45' }}>{item.details}</p>
+                      </div>
+                    )}
+                  />
+                ))}
+              </div>
+
+              <h3 style={{
+                fontSize: '18px',
+                fontWeight: '700',
+                color: '#333',
+                marginBottom: '12px',
+                textAlign: 'center'
+              }}>Verktyg, AI och utvecklingsmiljö</h3>
+
+              <div style={modalDetailGridStyle}>
+                {toolingHighlights.map((item) => (
+                  <FlipCard
+                    key={item.title}
+                    minHeight={148}
+                    flipped={Boolean(flippedCards[`tool-${item.title}`])}
+                    onToggle={() => toggleCardFlip(`tool-${item.title}`)}
+                    front={(
+                      <div style={{
+                        background: '#f4f7fb',
+                        padding: '12px 13px',
+                        borderRadius: '12px',
+                        borderLeft: '4px solid #2f6fa3',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '6px',
+                        textAlign: 'left'
+                      }}>
+                        <div>
+                          <p style={{ margin: '0 0 5px 0', fontWeight: '700', color: '#2f6fa3', fontSize: '13px', lineHeight: '1.35' }}>{item.title}</p>
+                          <p style={{ margin: '0', color: '#555', fontSize: '11px', lineHeight: '1.45' }}>{item.text}</p>
+                        </div>
+                      </div>
+                    )}
+                    back={(
+                      <div style={{
+                        background: '#f4f7fb',
+                        padding: '12px 13px',
+                        borderRadius: '12px',
+                        borderLeft: '4px solid #2f6fa3',
+                        display: 'grid',
+                        gap: '8px',
+                        alignContent: 'start',
+                        height: '100%',
+                        textAlign: 'left'
+                      }}>
+                        <div>
+                          <p style={{ margin: '0 0 5px 0', fontWeight: '700', color: '#2f6fa3', fontSize: '13px', lineHeight: '1.35' }}>{item.title}</p>
+                          <p style={{ margin: '0', color: '#555', fontSize: '11px', lineHeight: '1.45' }}>{item.details}</p>
+                        </div>
+                      </div>
+                    )}
+                  />
+                ))}
               </div>
             </div>
 
@@ -2112,7 +2739,7 @@ function App() {
                 fontSize: '14px',
                 fontWeight: '600',
                 color: 'white',
-                background: 'linear-gradient(135deg, #2f855a 0%, #276749 100%)',
+                background: 'linear-gradient(180deg, #447ff5 0%, #3366cc 100%)',
                 border: 'none',
                 borderRadius: '12px',
                 cursor: 'pointer',
@@ -2120,7 +2747,7 @@ function App() {
               }}
               onMouseOver={(e) => {
                 e.target.style.transform = 'translateY(-2px)'
-                e.target.style.boxShadow = '0 6px 20px rgba(47, 133, 90, 0.4)'
+                e.target.style.boxShadow = '0 6px 20px rgba(51, 102, 204, 0.28)'
               }}
               onMouseOut={(e) => {
                 e.target.style.transform = 'translateY(0)'
@@ -2135,8 +2762,7 @@ function App() {
       </div>
 
       <div style={{
-        width: '100%',
-        maxWidth: '900px',
+        ...sectionWrapperStyle,
         marginBottom: '30px',
         marginTop: '20px'
       }}>
@@ -2151,46 +2777,103 @@ function App() {
 
         <div style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))',
           gap: '12px',
           width: '100%'
         }}>
-          {[
-            { area: 'SE1', name: 'Luleå', today: spotPrices.SE1?.today, tomorrow: spotPrices.SE1?.tomorrow },
-            { area: 'SE2', name: 'Sundsvall', today: spotPrices.SE2?.today, tomorrow: spotPrices.SE2?.tomorrow },
-            { area: 'SE3', name: 'Stockholm', today: spotPrices.SE3?.today, tomorrow: spotPrices.SE3?.tomorrow },
-            { area: 'SE4', name: 'Malmö', today: spotPrices.SE4?.today, tomorrow: spotPrices.SE4?.tomorrow }
-          ].map((region) => (
-            <div key={region.area} style={{
-              background: '#fff',
-              borderRadius: '12px',
-              padding: '15px',
-              textAlign: 'center',
-              border: '1px solid #d2dbe4',
-              boxShadow: '0 1px 3px rgba(0, 0, 0, 0.08)'
-            }}>
-              <p style={{ fontSize: '13px', fontWeight: '700', color: '#3366cc', margin: '0 0 10px 0', whiteSpace: 'nowrap' }}>{`${region.area} ${region.name}`}</p>
-              <div style={{ marginBottom: '8px' }}>
-                <p style={{ fontSize: '11px', fontWeight: '600', color: '#888', margin: '0 0 3px 0' }}>Idag (medel)</p>
-                <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#222', margin: '0' }}>
-                  {region.today !== null ? region.today : '—'}
-                </h3>
-              </div>
-              <div style={{ borderTop: '1px solid #e0e0e0', paddingTop: '8px' }}>
-                <p style={{ fontSize: '11px', fontWeight: '600', color: '#888', margin: '0 0 3px 0' }}>Imorgon</p>
-                <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#276749', margin: '0' }}>
-                  {region.tomorrow !== null ? region.tomorrow : '—'}
-                </h3>
-              </div>
-              <p style={{ fontSize: '10px', color: '#aaa', margin: '8px 0 0 0' }}>öre/kWh</p>
-            </div>
-          ))}
+          {electricityCards.map((region) => {
+            const change = getChangeDetails(region.today, region.yesterday)
+
+            return (
+              <FlipCard
+                key={region.area}
+                minHeight={270}
+                flipped={Boolean(flippedCards[`spot-${region.area}`])}
+                onToggle={() => toggleCardFlip(`spot-${region.area}`)}
+                front={(
+                  <div style={{
+                    background: '#fff',
+                    borderRadius: '12px',
+                    padding: '15px',
+                    textAlign: 'center',
+                    border: '1px solid #d2dbe4',
+                    boxShadow: '0 1px 3px rgba(0, 0, 0, 0.08)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between',
+                    height: '100%'
+                  }}>
+                    <div>
+                      <p style={{ fontSize: '13px', fontWeight: '700', color: '#3366cc', margin: '0 0 10px 0', whiteSpace: 'nowrap' }}>{`${region.area} ${region.name}`}</p>
+                      <div style={{ marginBottom: '10px' }}>
+                        <p style={{ fontSize: '11px', fontWeight: '600', color: '#888', margin: '0 0 3px 0' }}>Idag (medel)</p>
+                        <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#222', margin: '0' }}>
+                          {region.today !== null ? region.today : '—'}
+                        </h3>
+                      </div>
+                      <div style={{ borderTop: '1px solid #e0e7ef', paddingTop: '8px' }}>
+                        <p style={{ fontSize: '11px', fontWeight: '600', color: '#888', margin: '0 0 3px 0' }}>Imorgon</p>
+                        <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#2f6fa3', margin: '0' }}>
+                          {region.tomorrow !== null ? region.tomorrow : '—'}
+                        </h3>
+                      </div>
+                      <div style={{ marginTop: '8px', background: '#f4f7fb', borderRadius: '10px', padding: '8px 10px' }}>
+                        <p style={{ margin: '0 0 3px 0', fontSize: '11px', color: '#6b7280' }}>I går</p>
+                        <p style={{ margin: '0', fontSize: '14px', fontWeight: '700', color: '#1f2937' }}>
+                          {region.yesterday !== null ? `${formatNumber(region.yesterday, 2)} öre` : '—'}
+                        </p>
+                      </div>
+                    </div>
+                    <div style={{ marginTop: '10px' }}>
+                      <p style={{ fontSize: '11px', color: change.color, fontWeight: '700', margin: '0 0 4px 0' }}>
+                        {change.delta !== null ? `${change.label} | ${change.percentLabel}` : 'Väntar på gårdagens värde'}
+                      </p>
+                      <p style={{ fontSize: '10px', color: '#94a3b8', margin: '0' }}>Tryck för mer trend</p>
+                    </div>
+                  </div>
+                )}
+                back={(
+                  <div style={{
+                    background: '#fff',
+                    borderRadius: '12px',
+                    padding: '15px',
+                    textAlign: 'left',
+                    border: '1px solid #d2dbe4',
+                    boxShadow: '0 1px 3px rgba(0, 0, 0, 0.08)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '10px',
+                    height: '100%'
+                  }}>
+                    <div>
+                      <p style={{ fontSize: '13px', fontWeight: '700', color: '#3366cc', margin: '0 0 8px 0' }}>{`${region.area} ${region.name}`}</p>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '10px' }}>
+                        <div style={{ background: '#f4f7fb', borderRadius: '10px', padding: '10px' }}>
+                          <p style={{ margin: '0 0 4px 0', fontSize: '11px', color: '#6b7280' }}>I går</p>
+                          <p style={{ margin: '0', fontSize: '15px', fontWeight: '700', color: '#1f2937' }}>{region.yesterday !== null ? `${formatNumber(region.yesterday, 2)} öre` : '—'}</p>
+                        </div>
+                        <div style={{ background: '#f4f7fb', borderRadius: '10px', padding: '10px' }}>
+                          <p style={{ margin: '0 0 4px 0', fontSize: '11px', color: '#6b7280' }}>I dag</p>
+                          <p style={{ margin: '0', fontSize: '15px', fontWeight: '700', color: '#1f2937' }}>{region.today !== null ? `${formatNumber(region.today, 2)} öre` : '—'}</p>
+                        </div>
+                      </div>
+                      <div style={{ background: '#f4f7fb', borderRadius: '10px', padding: '10px', marginBottom: '10px' }}>
+                        <p style={{ margin: '0 0 4px 0', fontSize: '11px', color: '#6b7280' }}>Imorgon</p>
+                        <p style={{ margin: '0', fontSize: '15px', fontWeight: '700', color: '#1f2937' }}>{region.tomorrow !== null ? `${formatNumber(region.tomorrow, 2)} öre` : '—'}</p>
+                      </div>
+                    </div>
+                    <SparklineChart history={region.history} color="#2f6fa3" fill="rgba(47, 111, 163, 0.12)" />
+                    <p style={{ margin: '0', fontSize: '11px', color: '#64748b', textAlign: 'center' }}>Senaste sju dagarnas medelpris. Tryck igen för framsidan.</p>
+                  </div>
+                )}
+              />
+            )
+          })}
         </div>
       </div>
 
       <div style={{
-        width: '100%',
-        maxWidth: '900px',
+        ...sectionWrapperStyle,
         marginBottom: '24px'
       }}>
         <div style={{
@@ -2258,7 +2941,7 @@ function App() {
 
         <div style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
           gap: '12px',
           width: '100%'
         }}>
@@ -2272,45 +2955,106 @@ function App() {
             <p style={{ margin: '0 0 12px 0', fontSize: '14px', fontWeight: '800', color: '#2f6fa3', textAlign: 'center' }}>Marknad</p>
             <div style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
               gap: '10px'
             }}>
-              {[
-                { key: 'eur', symbol: '€', label: 'EUR till SEK', value: exchangeRates.eurToSek !== null ? `${formatNumber(exchangeRates.eurToSek, 2)} kr` : '—', sublabel: '1 EUR' },
-                { key: 'usd', symbol: '$', label: 'USD till SEK', value: exchangeRates.usdToSek !== null ? `${formatNumber(exchangeRates.usdToSek, 2)} kr` : '—', sublabel: '1 USD' },
-                { key: 'gbp', symbol: '£', label: 'GBP till SEK', value: exchangeRates.gbpToSek !== null ? `${formatNumber(exchangeRates.gbpToSek, 2)} kr` : '—', sublabel: '1 GBP' },
-                { key: 'brent', symbol: 'BRENT', label: oilPrice.label, value: oilPrice.usdPerBarrel !== null ? `${formatNumber(oilPrice.usdPerBarrel, 2)} USD` : '—', sublabel: oilPrice.sekPerBarrel !== null ? `≈ ${formatNumber(oilPrice.sekPerBarrel, 0)} kr/fat` : 'per fat' }
-              ].map((item) => (
-                <div key={item.key} style={{
-                  background: '#f8fbff',
-                  border: '1px solid #dbe5ee',
-                  borderRadius: '12px',
-                  padding: '14px 12px',
-                  textAlign: 'center',
-                  minWidth: 0
-                }}>
-                  <div style={{
-                    width: '44px',
-                    height: '44px',
-                    borderRadius: '14px',
-                    background: item.key === 'brent' ? '#eef5f1' : '#e8f0f8',
-                    color: item.key === 'brent' ? '#4f8c6d' : '#2f6fa3',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: item.key === 'brent' ? '12px' : '24px',
-                    fontWeight: '800',
-                    margin: '0 auto 10px auto'
-                  }}>
-                    {item.symbol}
-                  </div>
-                  <p style={{ fontSize: '12px', fontWeight: '700', color: item.key === 'brent' ? '#4f8c6d' : '#2f6fa3', margin: '0 0 8px 0', whiteSpace: 'nowrap' }}>{item.label}</p>
-                  <h3 style={{ fontSize: '22px', fontWeight: '700', color: '#222', margin: '0 0 4px 0', whiteSpace: 'nowrap' }}>
-                    {item.value}
-                  </h3>
-                  <p style={{ fontSize: '12px', color: '#6b7280', margin: '0', whiteSpace: 'nowrap' }}>{item.sublabel}</p>
-                </div>
-              ))}
+              {marketCards.map((item) => {
+                const change = getChangeDetails(item.currentValue, item.previousValue)
+
+                return (
+                  <FlipCard
+                    key={item.key}
+                    minHeight={278}
+                    flipped={Boolean(flippedCards[`market-${item.key}`])}
+                    onToggle={() => toggleCardFlip(`market-${item.key}`)}
+                    front={(
+                      <div style={{
+                        background: '#f8fbff',
+                        border: '1px solid #dbe5ee',
+                        borderRadius: '12px',
+                        padding: '14px 12px',
+                        textAlign: 'center',
+                        minWidth: 0,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent: 'space-between',
+                        height: '100%'
+                      }}>
+                        <div>
+                          <div style={{
+                            width: '44px',
+                            height: '44px',
+                            borderRadius: '14px',
+                            background: '#e8f0f8',
+                            color: '#2f6fa3',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontSize: item.key === 'brent' ? '12px' : '24px',
+                            fontWeight: '800',
+                            margin: '0 auto 10px auto'
+                          }}>
+                            {item.symbol}
+                          </div>
+                          <p style={{ fontSize: '12px', fontWeight: '700', color: '#2f6fa3', margin: '0 0 8px 0', whiteSpace: 'nowrap' }}>{item.label}</p>
+                          <h3 style={{ fontSize: '22px', fontWeight: '700', color: '#222', margin: '0 0 4px 0', whiteSpace: 'nowrap' }}>
+                            {item.displayValue}
+                          </h3>
+                          <p style={{ fontSize: '12px', color: '#6b7280', margin: '0', whiteSpace: 'nowrap' }}>{item.sublabel}</p>
+                          <div style={{ marginTop: '8px', background: '#fff', borderRadius: '10px', padding: '8px 10px' }}>
+                            <p style={{ margin: '0 0 3px 0', fontSize: '11px', color: '#6b7280' }}>I går</p>
+                            <p style={{ margin: '0', fontSize: '14px', fontWeight: '700', color: '#1f2937' }}>{item.previousDisplayValue}</p>
+                          </div>
+                        </div>
+                        <div style={{ marginTop: '10px' }}>
+                          <p style={{ margin: '0 0 4px 0', fontSize: '11px', color: change.color, fontWeight: '700' }}>
+                            {change.delta !== null ? `${change.label} | ${change.percentLabel}` : 'Väntar på gårdagens värde'}
+                          </p>
+                          <p style={{ margin: '0', fontSize: '10px', color: '#94a3b8' }}>Tryck för fördjupning</p>
+                        </div>
+                      </div>
+                    )}
+                    back={(
+                      <div style={{
+                        background: '#f8fbff',
+                        border: '1px solid #dbe5ee',
+                        borderRadius: '12px',
+                        padding: '14px 12px',
+                        textAlign: 'left',
+                        minWidth: 0,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '10px',
+                        height: '100%'
+                      }}>
+                        <div>
+                          <p style={{ fontSize: '12px', fontWeight: '700', color: '#2f6fa3', margin: '0 0 8px 0' }}>{item.label}</p>
+                          <div style={{ display: 'grid', gap: '6px', marginBottom: '10px' }}>
+                            <div style={{ background: '#fff', borderRadius: '10px', padding: '8px 10px' }}>
+                              <p style={{ margin: '0 0 3px 0', fontSize: '11px', color: '#6b7280' }}>I dag</p>
+                              <p style={{ margin: '0', fontSize: '15px', fontWeight: '700', color: '#1f2937' }}>{item.displayValue}</p>
+                            </div>
+                            <div style={{ background: '#fff', borderRadius: '10px', padding: '8px 10px' }}>
+                              <p style={{ margin: '0 0 3px 0', fontSize: '11px', color: '#6b7280' }}>I går</p>
+                              <p style={{ margin: '0', fontSize: '15px', fontWeight: '700', color: '#1f2937' }}>{item.previousDisplayValue}</p>
+                            </div>
+                            <div style={{ background: '#fff', borderRadius: '10px', padding: '8px 10px' }}>
+                              <p style={{ margin: '0 0 3px 0', fontSize: '11px', color: '#6b7280' }}>Förändring</p>
+                              <p style={{ margin: '0', fontSize: '15px', fontWeight: '700', color: change.color }}>{`${change.label} | ${change.percentLabel}`}</p>
+                            </div>
+                          </div>
+                        </div>
+                        <SparklineChart history={item.history} color="#2f6fa3" fill="rgba(47, 111, 163, 0.14)" />
+                        <div style={{ display: 'grid', gap: '4px' }}>
+                          {item.detailLines.map((line) => (
+                            <p key={line} style={{ margin: '0', fontSize: '11px', color: '#64748b' }}>{line}</p>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  />
+                )
+              })}
             </div>
           </div>
 
@@ -2321,79 +3065,182 @@ function App() {
             border: '1px solid #d2dbe4',
             boxShadow: '0 1px 3px rgba(0, 0, 0, 0.08)'
           }}>
-            <p style={{ margin: '0 0 12px 0', fontSize: '14px', fontWeight: '800', color: '#4f8c6d', textAlign: 'center' }}>Väderduell</p>
+            <p style={{ margin: '0 0 12px 0', fontSize: '14px', fontWeight: '800', color: '#2f6fa3', textAlign: 'center' }}>Väderduell</p>
             <div style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
               gap: '10px'
             }}>
-              {[
-                weatherComparison.ostersund
-                  ? weatherComparison.ostersund
-                  : { key: 'ostersund', name: 'Östersund' },
-                weatherComparison.marbella
-                  ? weatherComparison.marbella
-                  : { key: 'marbella', name: 'Marbella' }
-              ].map((location) => (
-                <div
+              {weatherCards.map((location) => (
+                <FlipCard
                   key={location.key}
-                  style={{
-                    background: '#f9fcfa',
-                    border: '1px solid #dbe9e1',
-                    borderRadius: '12px',
-                    padding: '14px 12px',
-                    textAlign: 'center',
-                    minWidth: 0
-                  }}
-                >
-                  <div style={{
-                    width: '44px',
-                    height: '44px',
-                    borderRadius: '14px',
-                    background: '#eef5f1',
-                    color: '#4f8c6d',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: '24px',
-                    fontWeight: '700',
-                    margin: '0 auto 10px auto'
-                  }}>
-                    {getWeatherSymbolFromCode(location.weatherCode)}
-                  </div>
-                  <p style={{ fontSize: '12px', fontWeight: '700', color: '#4f8c6d', margin: '0 0 8px 0', whiteSpace: 'nowrap' }}>{location.name}</p>
-                  <h3 style={{ fontSize: '22px', fontWeight: '700', color: '#222', margin: '0 0 4px 0', whiteSpace: 'nowrap' }}>
-                    {location && Number.isFinite(location.temperature) ? `${formatNumber(location.temperature)}°` : '—'}
-                  </h3>
-                  <p style={{ fontSize: '12px', color: '#4b5563', margin: '0 0 8px 0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {location?.description ?? 'Hämtar väder...'}
-                  </p>
-                  <p style={{ fontSize: '12px', color: '#6b7280', margin: '0 0 4px 0', whiteSpace: 'nowrap' }}>
-                    Känns som {location && Number.isFinite(location.apparentTemperature) ? `${formatNumber(location.apparentTemperature)}°` : '—'}
-                  </p>
-                  <p style={{ fontSize: '12px', color: '#6b7280', margin: '0 0 4px 0', whiteSpace: 'nowrap' }}>
-                    Idag {location && Number.isFinite(location.minTemperature) && Number.isFinite(location.maxTemperature) ? `${formatNumber(location.minTemperature)}° / ${formatNumber(location.maxTemperature)}°` : '—'}
-                  </p>
-                  <p style={{ fontSize: '12px', color: '#6b7280', margin: '0 0 4px 0', whiteSpace: 'nowrap' }}>
-                    Regnrisk {location && Number.isFinite(location.precipitationProbability) ? `${formatNumber(location.precipitationProbability, 0)}%` : '—'}
-                  </p>
-                  <p style={{ fontSize: '12px', color: '#6b7280', margin: '0', whiteSpace: 'nowrap' }}>
-                    Vind {location && Number.isFinite(location.windSpeed) ? `${formatNumber(location.windSpeed)} m/s` : '—'}
-                  </p>
-                </div>
+                  minHeight={300}
+                  flipped={Boolean(flippedCards[`weather-${location.key}`])}
+                  onToggle={() => toggleCardFlip(`weather-${location.key}`)}
+                  front={(
+                    <div
+                      style={{
+                        background: '#f8fbff',
+                        border: '1px solid #dbe5ee',
+                        borderRadius: '12px',
+                        padding: '14px 12px',
+                        textAlign: 'center',
+                        minWidth: 0,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent: 'space-between',
+                        height: '100%'
+                      }}
+                    >
+                      <div>
+                        <div style={{
+                          width: '44px',
+                          height: '44px',
+                          borderRadius: '14px',
+                          background: '#e8f0f8',
+                          color: '#2f6fa3',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontSize: '24px',
+                          fontWeight: '700',
+                          margin: '0 auto 10px auto'
+                        }}>
+                          {getWeatherSymbolFromCode(location.weatherCode)}
+                        </div>
+                        <p style={{ fontSize: '12px', fontWeight: '700', color: '#2f6fa3', margin: '0 0 8px 0', whiteSpace: 'nowrap' }}>{location.name}</p>
+                        <h3 style={{ fontSize: '22px', fontWeight: '700', color: '#222', margin: '0 0 4px 0', whiteSpace: 'nowrap' }}>
+                          {location && Number.isFinite(location.temperature) ? `${formatNumber(location.temperature)}°` : '—'}
+                        </h3>
+                        <p style={{ fontSize: '12px', color: '#4b5563', margin: '0 0 8px 0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {location?.description ?? 'Hämtar väder...'}
+                        </p>
+                        <div style={{ display: 'grid', gap: '6px' }}>
+                          <div style={{ background: '#fff', borderRadius: '10px', padding: '8px 10px' }}>
+                            <p style={{ margin: '0 0 3px 0', fontSize: '11px', color: '#6b7280' }}>Känns som</p>
+                            <p style={{ margin: '0', fontSize: '14px', fontWeight: '700', color: '#1f2937' }}>
+                              {location && Number.isFinite(location.apparentTemperature) ? `${formatNumber(location.apparentTemperature)}°` : '—'}
+                            </p>
+                          </div>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+                            <div style={{ background: '#fff', borderRadius: '10px', padding: '8px 10px' }}>
+                              <p style={{ margin: '0 0 3px 0', fontSize: '11px', color: '#6b7280' }}>Regn</p>
+                              <p style={{ margin: '0', fontSize: '13px', fontWeight: '700', color: '#1f2937' }}>{location && Number.isFinite(location.precipitationProbability) ? `${formatNumber(location.precipitationProbability, 0)}%` : '—'}</p>
+                            </div>
+                            <div style={{ background: '#fff', borderRadius: '10px', padding: '8px 10px' }}>
+                              <p style={{ margin: '0 0 3px 0', fontSize: '11px', color: '#6b7280' }}>Fukt</p>
+                              <p style={{ margin: '0', fontSize: '13px', fontWeight: '700', color: '#1f2937' }}>{location && Number.isFinite(location.humidity) ? `${formatNumber(location.humidity, 0)}%` : '—'}</p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      <p style={{ margin: '10px 0 0 0', fontSize: '10px', color: '#94a3b8' }}>Tryck för mer</p>
+                    </div>
+                  )}
+                  back={(
+                    <div
+                      style={{
+                        background: '#f8fbff',
+                        border: '1px solid #dbe5ee',
+                        borderRadius: '12px',
+                        padding: '14px 12px',
+                        textAlign: 'left',
+                        minWidth: 0,
+                        display: 'grid',
+                        gap: '8px',
+                        alignContent: 'start',
+                        height: '100%'
+                      }}
+                    >
+                      <p style={{ fontSize: '12px', fontWeight: '700', color: '#2f6fa3', margin: '0' }}>{location.name}</p>
+                      <p style={{ margin: '0', fontSize: '11px', color: '#64748b' }}>{weatherLocationDetails[location.key]?.region ?? ''}</p>
+                      <div style={{ background: '#fff', borderRadius: '10px', padding: '9px 10px' }}>
+                        <p style={{ margin: '0 0 3px 0', fontSize: '11px', color: '#6b7280' }}>Känns som</p>
+                        <p style={{ margin: '0', fontSize: '15px', fontWeight: '700', color: '#1f2937' }}>
+                          {location && Number.isFinite(location.apparentTemperature) ? `${formatNumber(location.apparentTemperature)}°` : '—'}
+                        </p>
+                      </div>
+                      <div style={{ background: '#fff', borderRadius: '10px', padding: '9px 10px' }}>
+                        <p style={{ margin: '0 0 3px 0', fontSize: '11px', color: '#6b7280' }}>Dagens spann</p>
+                        <p style={{ margin: '0', fontSize: '14px', fontWeight: '700', color: '#1f2937' }}>
+                          {location && Number.isFinite(location.minTemperature) && Number.isFinite(location.maxTemperature) ? `${formatNumber(location.minTemperature)}° / ${formatNumber(location.maxTemperature)}°` : '—'}
+                        </p>
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                        <div style={{ background: '#fff', borderRadius: '10px', padding: '9px 10px' }}>
+                          <p style={{ margin: '0 0 3px 0', fontSize: '11px', color: '#6b7280' }}>Regnrisk</p>
+                          <p style={{ margin: '0', fontSize: '14px', fontWeight: '700', color: '#1f2937' }}>{location && Number.isFinite(location.precipitationProbability) ? `${formatNumber(location.precipitationProbability, 0)}%` : '—'}</p>
+                        </div>
+                        <div style={{ background: '#fff', borderRadius: '10px', padding: '9px 10px' }}>
+                          <p style={{ margin: '0 0 3px 0', fontSize: '11px', color: '#6b7280' }}>Vind</p>
+                          <p style={{ margin: '0', fontSize: '14px', fontWeight: '700', color: '#1f2937' }}>{location && Number.isFinite(location.windSpeed) ? `${formatNumber(location.windSpeed)} m/s` : '—'}</p>
+                        </div>
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                        <div style={{ background: '#fff', borderRadius: '10px', padding: '9px 10px' }}>
+                          <p style={{ margin: '0 0 3px 0', fontSize: '11px', color: '#6b7280' }}>UV max</p>
+                          <p style={{ margin: '0', fontSize: '14px', fontWeight: '700', color: '#1f2937' }}>{location && Number.isFinite(location.uvIndexMax) ? formatNumber(location.uvIndexMax, 1) : '—'}</p>
+                        </div>
+                        <div style={{ background: '#fff', borderRadius: '10px', padding: '9px 10px' }}>
+                          <p style={{ margin: '0 0 3px 0', fontSize: '11px', color: '#6b7280' }}>Luftfukt</p>
+                          <p style={{ margin: '0', fontSize: '14px', fontWeight: '700', color: '#1f2937' }}>{location && Number.isFinite(location.humidity) ? `${formatNumber(location.humidity, 0)}%` : '—'}</p>
+                        </div>
+                      </div>
+                      <div style={{ background: '#fff', borderRadius: '10px', padding: '9px 10px' }}>
+                        <p style={{ margin: '0 0 3px 0', fontSize: '11px', color: '#6b7280' }}>Sol upp / ner</p>
+                        <p style={{ margin: '0', fontSize: '13px', fontWeight: '700', color: '#1f2937' }}>
+                          {location?.sunrise ? new Date(location.sunrise).toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' }) : '—'} / {location?.sunset ? new Date(location.sunset).toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' }) : '—'}
+                        </p>
+                      </div>
+                      <div style={{ background: '#fff', borderRadius: '10px', padding: '9px 10px' }}>
+                        <p style={{ margin: '0 0 3px 0', fontSize: '11px', color: '#6b7280' }}>Stadskänsla</p>
+                        <p style={{ margin: '0', fontSize: '11px', color: '#475569', lineHeight: '1.5' }}>
+                          {weatherLocationDetails[location.key]?.vibe ?? ''}
+                        </p>
+                      </div>
+                      <p style={{ margin: '0', fontSize: '11px', color: '#64748b' }}>
+                        {weatherLocationDetails[location.key]?.readout ?? ''}
+                      </p>
+                    </div>
+                  )}
+                />
               ))}
             </div>
             <div style={{
               marginTop: '12px',
-              background: '#eef5f1',
-              border: '1px solid #dbe9e1',
+              background: '#f4f7fb',
+              border: '1px solid #dbe5ee',
               borderRadius: '12px',
               padding: '12px 14px',
               textAlign: 'center'
             }}>
-              <p style={{ margin: '0', fontSize: '13px', fontWeight: '700', color: '#355d48', lineHeight: '1.6' }}>
+              <p style={{ margin: '0', fontSize: '13px', fontWeight: '700', color: '#1f4b78', lineHeight: '1.6' }}>
                 {getWeatherComparisonText(weatherComparison.ostersund, weatherComparison.marbella) || 'Hämtar jämförelsen mellan Östersund och Marbella...'}
               </p>
+            </div>
+            <div style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: '8px',
+              justifyContent: 'center',
+              marginTop: '12px'
+            }}>
+              {weatherCards.map((location) => (
+                <div key={`${location.key}-city-koll`} style={{
+                  background: '#f4f7fb',
+                  border: '1px solid #dbe5ee',
+                  borderRadius: '999px',
+                  padding: '9px 12px',
+                  textAlign: 'left',
+                  maxWidth: '420px'
+                }}>
+                  <p style={{ margin: '0', fontSize: '11px', color: '#1f2937', lineHeight: '1.45' }}>
+                    <strong style={{ color: '#2f6fa3' }}>{location.name}.</strong>{' '}
+                    {weatherLocationDetails[location.key]?.vibe ?? ''}{' '}
+                    {weatherLocationDetails[location.key]?.readout ?? ''}
+                  </p>
+                </div>
+              ))}
             </div>
           </div>
         </div>

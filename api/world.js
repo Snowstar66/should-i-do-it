@@ -3,7 +3,7 @@
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 
-const OIL_PRICE_URL = 'https://query1.finance.yahoo.com/v8/finance/chart/BZ=F?interval=1d&range=1d'
+const OIL_PRICE_URL = 'https://query1.finance.yahoo.com/v8/finance/chart/BZ=F?interval=1d&range=10d'
 const NEWS_FEED_URL = 'https://feeds.bbci.co.uk/news/rss.xml'
 const execFileAsync = promisify(execFile)
 
@@ -45,20 +45,39 @@ const fetchBrentOilPrice = async () => {
   const payload = await response.json()
   const chart = payload?.chart?.result?.[0]
   const quote = chart?.indicators?.quote?.[0]
-  const timestamp = chart?.timestamp?.[0]
-  const closeValue = Number(quote?.close?.[0] ?? chart?.meta?.regularMarketPrice)
-  const openValue = Number(quote?.open?.[0])
-  const highValue = Number(quote?.high?.[0])
-  const lowValue = Number(quote?.low?.[0])
-  const date = timestamp ? new Date(timestamp * 1000).toISOString().slice(0, 10) : ''
+  const timestamps = Array.isArray(chart?.timestamp) ? chart.timestamp : []
+  const closeValues = Array.isArray(quote?.close) ? quote.close : []
+  const openValues = Array.isArray(quote?.open) ? quote.open : []
+  const highValues = Array.isArray(quote?.high) ? quote.high : []
+  const lowValues = Array.isArray(quote?.low) ? quote.low : []
+  const history = timestamps.map((timestamp, index) => {
+    const closeValue = Number(closeValues[index])
+
+    return {
+      index,
+      date: new Date(timestamp * 1000).toISOString().slice(0, 10),
+      usdPerBarrel: Number.isFinite(closeValue) ? closeValue : null
+    }
+  }).filter((entry) => Number.isFinite(entry.usdPerBarrel)).slice(-7)
+  const latestEntry = history[history.length - 1] ?? null
+  const previousEntry = history[history.length - 2] ?? null
+  const latestIndex = latestEntry?.index ?? 0
+  const openValue = Number(openValues[latestIndex])
+  const highValue = Number(highValues[latestIndex])
+  const lowValue = Number(lowValues[latestIndex])
 
   return {
     label: 'Brentolja',
-    date,
+    date: latestEntry?.date ?? '',
     open: Number.isFinite(openValue) ? openValue : null,
     high: Number.isFinite(highValue) ? highValue : null,
     low: Number.isFinite(lowValue) ? lowValue : null,
-    usdPerBarrel: Number.isFinite(closeValue) ? closeValue : null
+    usdPerBarrel: latestEntry?.usdPerBarrel ?? null,
+    previousUsdPerBarrel: previousEntry?.usdPerBarrel ?? null,
+    history: history.map(({ date, usdPerBarrel }) => ({
+      date,
+      usdPerBarrel
+    }))
   }
 }
 

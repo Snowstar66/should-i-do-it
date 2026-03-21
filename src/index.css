@@ -85,6 +85,104 @@ body {
   animation-play-state: paused;
 }
 
+@keyframes loading-spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.loading-spinner {
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  border: 2px solid rgba(47, 111, 163, 0.2);
+  border-top-color: #2f6fa3;
+  display: inline-block;
+  animation: loading-spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+
+.loading-spinner-large {
+  width: 22px;
+  height: 22px;
+  border-width: 3px;
+}
+
+.flip-card {
+  position: relative;
+  min-height: 220px;
+  perspective: 1200px;
+}
+
+.flip-card-button {
+  width: 100%;
+  min-height: inherit;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  text-align: inherit;
+  font: inherit;
+  color: inherit;
+}
+
+.flip-card-inner {
+  position: relative;
+  width: 100%;
+  transform-style: preserve-3d;
+  transition: transform 0.55s ease;
+}
+
+.flip-card-face {
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  border-radius: 14px;
+  overflow: hidden;
+  transition:
+    transform 0.55s ease,
+    opacity 0.25s ease;
+}
+
+.flip-card-back {
+  transform: rotateY(-180deg);
+}
+
+.flip-card-content {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.flip-card:not(.is-flipped) .flip-card-front {
+  position: relative;
+  opacity: 1;
+  transform: rotateY(0deg);
+}
+
+.flip-card:not(.is-flipped) .flip-card-back {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.flip-card.is-flipped .flip-card-front {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transform: rotateY(180deg);
+  pointer-events: none;
+}
+
+.flip-card.is-flipped .flip-card-back {
+  position: relative;
+  opacity: 1;
+  transform: rotateY(0deg);
+}
+
 h1,
 h2 {
   font-family: var(--heading);
