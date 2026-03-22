@@ -1730,21 +1730,21 @@ function App() {
   ]
   const modalOverviewGridStyle = {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(185px, 220px))',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 210px))',
     justifyContent: 'center',
-    gap: '12px',
-    margin: '0 auto 24px auto',
-    maxWidth: '520px',
+    gap: '8px',
+    margin: '0 auto 16px auto',
+    maxWidth: '500px',
     alignItems: 'stretch'
   }
   const modalDetailGridStyle = {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 230px))',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(198px, 220px))',
     justifyContent: 'center',
-    gap: '12px',
-    margin: '0 auto 18px auto',
-    maxWidth: '520px',
-    alignItems: 'start'
+    gap: '8px',
+    margin: '0 auto 14px auto',
+    maxWidth: '500px',
+    alignItems: 'stretch'
   }
   const sectionWrapperStyle = {
     width: '100%',
@@ -2481,14 +2481,14 @@ function App() {
             borderRadius: '12px',
             border: '1px solid #a2a9b1',
             boxShadow: '0 10px 30px rgba(0, 0, 0, 0.18)',
-            padding: 'clamp(22px, 4vw, 40px)',
-            maxWidth: '600px',
+            padding: 'clamp(18px, 3vw, 28px)',
+            maxWidth: '560px',
             width: '100%',
             maxHeight: '85vh',
             overflowY: 'auto',
             cursor: 'default'
           }}>
-            <div style={{ textAlign: 'center', marginBottom: '30px' }}>
+            <div style={{ textAlign: 'center', marginBottom: '20px' }}>
               <p style={{
                 fontSize: '28px',
                 fontWeight: '700',
@@ -2511,7 +2511,7 @@ function App() {
 
             <div style={{
               borderTop: '2px solid #f0f0f0',
-              paddingTop: '25px'
+              paddingTop: '18px'
             }}>
               <div style={modalOverviewGridStyle}>
                 {infoHighlights.map((item) => (
@@ -2519,11 +2519,11 @@ function App() {
                     background: 'linear-gradient(180deg, #f7fbff 0%, #eef4fa 100%)',
                     border: '1px solid #dbe5ee',
                     borderRadius: '14px',
-                    padding: '14px 14px 15px 14px',
+                    padding: '11px 12px 12px 12px',
                     textAlign: 'center',
-                    minHeight: '122px',
+                    minHeight: '104px',
                     display: 'grid',
-                    gap: '6px',
+                    gap: '4px',
                     alignContent: 'start',
                     boxSizing: 'border-box'
                   }}>
@@ -2551,7 +2551,7 @@ function App() {
                 fontSize: '18px',
                 fontWeight: '700',
                 color: '#333',
-                marginBottom: '12px',
+                marginBottom: '9px',
                 textAlign: 'center'
               }}>Visuell teknikstack</h3>
 
@@ -2559,23 +2559,25 @@ function App() {
                 {techHighlights.map((item) => (
                   <FlipCard
                     key={item.title}
-                    minHeight={148}
+                    minHeight={102}
                     flipped={Boolean(flippedCards[`tech-${item.title}`])}
                     onToggle={() => toggleCardFlip(`tech-${item.title}`)}
                     front={(
                       <div style={{
                         background: '#f4f7fb',
-                        padding: '12px 13px',
+                        padding: '10px 11px',
                         borderRadius: '12px',
                         borderLeft: '4px solid #2f6fa3',
                         display: 'flex',
                         flexDirection: 'column',
-                        gap: '6px',
-                        textAlign: 'left'
+                        gap: '4px',
+                        textAlign: 'left',
+                        height: '100%',
+                        boxSizing: 'border-box'
                       }}>
                         <div>
-                          <p style={{ margin: '0 0 5px 0', fontWeight: '700', color: '#2f6fa3', fontSize: '13px', lineHeight: '1.35' }}>{item.title}</p>
-                          <p style={{ margin: '0', color: '#555', fontSize: '11px', lineHeight: '1.45' }}>
+                          <p style={{ margin: '0 0 4px 0', fontWeight: '700', color: '#2f6fa3', fontSize: '13px', lineHeight: '1.3' }}>{item.title}</p>
+                          <p style={{ margin: '0', color: '#555', fontSize: '11px', lineHeight: '1.38' }}>
                             {item.text}
                           </p>
                         </div>
@@ -2584,18 +2586,19 @@ function App() {
                     back={(
                       <div style={{
                         background: '#f4f7fb',
-                        padding: '12px 13px',
+                        padding: '10px 11px',
                         borderRadius: '12px',
                         borderLeft: '4px solid #2f6fa3',
                         display: 'grid',
-                        gap: '8px',
+                        gap: '6px',
                         alignContent: 'start',
                         height: '100%',
-                        textAlign: 'left'
+                        textAlign: 'left',
+                        boxSizing: 'border-box'
                       }}>
                         <div>
-                          <p style={{ margin: '0 0 5px 0', fontWeight: '700', color: '#2f6fa3', fontSize: '13px', lineHeight: '1.35' }}>{item.title}</p>
-                          <p style={{ margin: '0', color: '#555', fontSize: '11px', lineHeight: '1.45' }}>{item.details}</p>
+                          <p style={{ margin: '0 0 4px 0', fontWeight: '700', color: '#2f6fa3', fontSize: '13px', lineHeight: '1.3' }}>{item.title}</p>
+                          <p style={{ margin: '0', color: '#555', fontSize: '11px', lineHeight: '1.38' }}>{item.details}</p>
                         </div>
                         <a
                           href={item.learnMoreUrl}
@@ -2627,7 +2630,7 @@ function App() {
                 fontSize: '18px',
                 fontWeight: '700',
                 color: '#333',
-                marginBottom: '12px',
+                marginBottom: '9px',
                 textAlign: 'center'
               }}>Designmönster i appen</h3>
 
@@ -2635,40 +2638,43 @@ function App() {
                 {patternHighlights.map((item) => (
                   <FlipCard
                     key={item.title}
-                    minHeight={148}
+                    minHeight={102}
                     flipped={Boolean(flippedCards[`pattern-${item.title}`])}
                     onToggle={() => toggleCardFlip(`pattern-${item.title}`)}
                     front={(
                       <div style={{
                         background: '#f8fbff',
-                        padding: '12px 13px',
+                        padding: '10px 11px',
                         borderRadius: '12px',
                         borderLeft: '4px solid #7aa5c7',
                         display: 'flex',
                         flexDirection: 'column',
-                        gap: '6px',
-                        textAlign: 'left'
+                        gap: '4px',
+                        textAlign: 'left',
+                        height: '100%',
+                        boxSizing: 'border-box'
                       }}>
                         <div>
-                          <p style={{ margin: '0 0 5px 0', fontWeight: '700', color: '#1f4b78', fontSize: '13px', lineHeight: '1.35' }}>{item.title}</p>
-                          <p style={{ margin: '0', color: '#555', fontSize: '11px', lineHeight: '1.45' }}>{item.text}</p>
+                          <p style={{ margin: '0 0 4px 0', fontWeight: '700', color: '#1f4b78', fontSize: '13px', lineHeight: '1.3' }}>{item.title}</p>
+                          <p style={{ margin: '0', color: '#555', fontSize: '11px', lineHeight: '1.38' }}>{item.text}</p>
                         </div>
                       </div>
                     )}
                     back={(
                       <div style={{
                         background: '#f8fbff',
-                        padding: '12px 13px',
+                        padding: '10px 11px',
                         borderRadius: '12px',
                         borderLeft: '4px solid #7aa5c7',
                         display: 'grid',
-                        gap: '8px',
+                        gap: '6px',
                         alignContent: 'start',
                         height: '100%',
-                        textAlign: 'left'
+                        textAlign: 'left',
+                        boxSizing: 'border-box'
                       }}>
-                        <p style={{ margin: '0', fontWeight: '700', color: '#1f4b78', fontSize: '13px', lineHeight: '1.35' }}>{item.title}</p>
-                        <p style={{ margin: '0', color: '#555', fontSize: '11px', lineHeight: '1.45' }}>{item.details}</p>
+                        <p style={{ margin: '0', fontWeight: '700', color: '#1f4b78', fontSize: '13px', lineHeight: '1.3' }}>{item.title}</p>
+                        <p style={{ margin: '0', color: '#555', fontSize: '11px', lineHeight: '1.38' }}>{item.details}</p>
                       </div>
                     )}
                   />
@@ -2679,7 +2685,7 @@ function App() {
                 fontSize: '18px',
                 fontWeight: '700',
                 color: '#333',
-                marginBottom: '12px',
+                marginBottom: '9px',
                 textAlign: 'center'
               }}>Verktyg, AI och utvecklingsmiljö</h3>
 
@@ -2687,41 +2693,44 @@ function App() {
                 {toolingHighlights.map((item) => (
                   <FlipCard
                     key={item.title}
-                    minHeight={148}
+                    minHeight={102}
                     flipped={Boolean(flippedCards[`tool-${item.title}`])}
                     onToggle={() => toggleCardFlip(`tool-${item.title}`)}
                     front={(
                       <div style={{
                         background: '#f4f7fb',
-                        padding: '12px 13px',
+                        padding: '10px 11px',
                         borderRadius: '12px',
                         borderLeft: '4px solid #2f6fa3',
                         display: 'flex',
                         flexDirection: 'column',
-                        gap: '6px',
-                        textAlign: 'left'
+                        gap: '4px',
+                        textAlign: 'left',
+                        height: '100%',
+                        boxSizing: 'border-box'
                       }}>
                         <div>
-                          <p style={{ margin: '0 0 5px 0', fontWeight: '700', color: '#2f6fa3', fontSize: '13px', lineHeight: '1.35' }}>{item.title}</p>
-                          <p style={{ margin: '0', color: '#555', fontSize: '11px', lineHeight: '1.45' }}>{item.text}</p>
+                          <p style={{ margin: '0 0 4px 0', fontWeight: '700', color: '#2f6fa3', fontSize: '13px', lineHeight: '1.3' }}>{item.title}</p>
+                          <p style={{ margin: '0', color: '#555', fontSize: '11px', lineHeight: '1.38' }}>{item.text}</p>
                         </div>
                       </div>
                     )}
                     back={(
                       <div style={{
                         background: '#f4f7fb',
-                        padding: '12px 13px',
+                        padding: '10px 11px',
                         borderRadius: '12px',
                         borderLeft: '4px solid #2f6fa3',
                         display: 'grid',
-                        gap: '8px',
+                        gap: '6px',
                         alignContent: 'start',
                         height: '100%',
-                        textAlign: 'left'
+                        textAlign: 'left',
+                        boxSizing: 'border-box'
                       }}>
                         <div>
-                          <p style={{ margin: '0 0 5px 0', fontWeight: '700', color: '#2f6fa3', fontSize: '13px', lineHeight: '1.35' }}>{item.title}</p>
-                          <p style={{ margin: '0', color: '#555', fontSize: '11px', lineHeight: '1.45' }}>{item.details}</p>
+                          <p style={{ margin: '0 0 4px 0', fontWeight: '700', color: '#2f6fa3', fontSize: '13px', lineHeight: '1.3' }}>{item.title}</p>
+                          <p style={{ margin: '0', color: '#555', fontSize: '11px', lineHeight: '1.38' }}>{item.details}</p>
                         </div>
                       </div>
                     )}
