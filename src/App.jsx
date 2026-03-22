@@ -1750,6 +1750,120 @@ function App() {
     width: '100%',
     maxWidth: APP_SECTION_MAX_WIDTH
   }
+  const liveSectionCardStyle = {
+    background: 'rgba(255, 255, 255, 0.95)',
+    borderRadius: '14px',
+    padding: '16px',
+    border: '1px solid #d2dbe4',
+    boxShadow: '0 1px 3px rgba(0, 0, 0, 0.08)'
+  }
+  const liveSectionTitleStyle = {
+    margin: '0 0 12px 0',
+    fontSize: '14px',
+    fontWeight: '800',
+    color: '#2f6fa3',
+    textAlign: 'center'
+  }
+  const liveCardGridStyle = {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+    gap: '10px'
+  }
+  const liveFlipCardBaseStyle = {
+    background: '#f8fbff',
+    border: '1px solid #dbe5ee',
+    borderRadius: '12px',
+    minWidth: 0,
+    height: '100%'
+  }
+  const liveFlipCardFrontStyle = {
+    ...liveFlipCardBaseStyle,
+    padding: '11px 10px',
+    textAlign: 'center',
+    display: 'flex',
+    flexDirection: 'column',
+    justifyContent: 'flex-start',
+    gap: '8px'
+  }
+  const liveFlipCardBackStyle = {
+    ...liveFlipCardBaseStyle,
+    padding: '14px 12px',
+    textAlign: 'left',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '10px'
+  }
+  const liveCardIconStyle = {
+    width: '40px',
+    height: '40px',
+    borderRadius: '14px',
+    background: '#e8f0f8',
+    color: '#2f6fa3',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontWeight: '700',
+    margin: '0 auto 6px auto'
+  }
+  const liveCardTitleStyle = {
+    fontSize: '12px',
+    fontWeight: '700',
+    color: '#2f6fa3',
+    margin: '0 0 4px 0',
+    lineHeight: '1.2'
+  }
+  const liveCardValueStyle = {
+    fontSize: '21px',
+    fontWeight: '700',
+    color: '#222',
+    margin: '0 0 2px 0',
+    whiteSpace: 'nowrap'
+  }
+  const liveCardMetaStyle = {
+    fontSize: '12px',
+    color: '#4b5563',
+    margin: '0',
+    lineHeight: '1.2'
+  }
+  const liveCardMetricGridStyle = {
+    display: 'grid',
+    gridTemplateColumns: '1fr 1fr',
+    gap: '5px'
+  }
+  const liveCardMetricStyle = {
+    background: '#fff',
+    borderRadius: '10px',
+    padding: '6px 8px',
+    border: '1px solid #edf2f7'
+  }
+  const liveCardMetricLabelStyle = {
+    margin: '0 0 2px 0',
+    fontSize: '10px',
+    color: '#6b7280',
+    lineHeight: '1.15'
+  }
+  const liveCardMetricValueStyle = {
+    margin: '0',
+    fontSize: '12px',
+    fontWeight: '700',
+    color: '#1f2937',
+    lineHeight: '1.2'
+  }
+  const liveCardFooterStyle = {
+    margin: '0',
+    fontSize: '11px',
+    color: '#64748b',
+    lineHeight: '1.3'
+  }
+  const liveCardHintStyle = {
+    margin: '0',
+    fontSize: '10px',
+    color: '#94a3b8'
+  }
+  const liveCardFooterGroupStyle = {
+    display: 'grid',
+    gap: '3px'
+  }
 
   return (
     <div style={{
@@ -2792,87 +2906,67 @@ function App() {
         }}>
           {electricityCards.map((region) => {
             const change = getChangeDetails(region.today, region.yesterday)
+            const changeSummary = change.delta !== null ? `${change.label} | ${change.percentLabel}` : 'Väntar på gårdagens värde'
 
             return (
               <FlipCard
                 key={region.area}
-                minHeight={270}
+                minHeight={272}
                 flipped={Boolean(flippedCards[`spot-${region.area}`])}
                 onToggle={() => toggleCardFlip(`spot-${region.area}`)}
                 front={(
-                  <div style={{
-                    background: '#fff',
-                    borderRadius: '12px',
-                    padding: '15px',
-                    textAlign: 'center',
-                    border: '1px solid #d2dbe4',
-                    boxShadow: '0 1px 3px rgba(0, 0, 0, 0.08)',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    justifyContent: 'space-between',
-                    height: '100%'
-                  }}>
+                  <div style={liveFlipCardFrontStyle}>
                     <div>
-                      <p style={{ fontSize: '13px', fontWeight: '700', color: '#3366cc', margin: '0 0 10px 0', whiteSpace: 'nowrap' }}>{`${region.area} ${region.name}`}</p>
-                      <div style={{ marginBottom: '10px' }}>
-                        <p style={{ fontSize: '11px', fontWeight: '600', color: '#888', margin: '0 0 3px 0' }}>Idag (medel)</p>
-                        <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#222', margin: '0' }}>
-                          {region.today !== null ? region.today : '—'}
-                        </h3>
+                      <div style={{ ...liveCardIconStyle, fontSize: '13px', letterSpacing: '0.04em' }}>
+                        {region.area}
                       </div>
-                      <div style={{ borderTop: '1px solid #e0e7ef', paddingTop: '8px' }}>
-                        <p style={{ fontSize: '11px', fontWeight: '600', color: '#888', margin: '0 0 3px 0' }}>Imorgon</p>
-                        <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#2f6fa3', margin: '0' }}>
-                          {region.tomorrow !== null ? region.tomorrow : '—'}
-                        </h3>
-                      </div>
-                      <div style={{ marginTop: '8px', background: '#f4f7fb', borderRadius: '10px', padding: '8px 10px' }}>
-                        <p style={{ margin: '0 0 3px 0', fontSize: '11px', color: '#6b7280' }}>I går</p>
-                        <p style={{ margin: '0', fontSize: '14px', fontWeight: '700', color: '#1f2937' }}>
+                      <p style={liveCardTitleStyle}>{region.name}</p>
+                      <h3 style={liveCardValueStyle}>
+                        {region.today !== null ? `${formatNumber(region.today, 2)} öre` : '—'}
+                      </h3>
+                      <p style={liveCardMetaStyle}>Dagens snitt i öre/kWh</p>
+                    </div>
+                    <div style={liveCardMetricGridStyle}>
+                      <div style={liveCardMetricStyle}>
+                        <p style={liveCardMetricLabelStyle}>I går</p>
+                        <p style={liveCardMetricValueStyle}>
                           {region.yesterday !== null ? `${formatNumber(region.yesterday, 2)} öre` : '—'}
                         </p>
                       </div>
+                      <div style={liveCardMetricStyle}>
+                        <p style={liveCardMetricLabelStyle}>Imorgon</p>
+                        <p style={liveCardMetricValueStyle}>
+                          {region.tomorrow !== null ? `${formatNumber(region.tomorrow, 2)} öre` : '—'}
+                        </p>
+                      </div>
                     </div>
-                    <div style={{ marginTop: '10px' }}>
-                      <p style={{ fontSize: '11px', color: change.color, fontWeight: '700', margin: '0 0 4px 0' }}>
-                        {change.delta !== null ? `${change.label} | ${change.percentLabel}` : 'Väntar på gårdagens värde'}
-                      </p>
-                      <p style={{ fontSize: '10px', color: '#94a3b8', margin: '0' }}>Tryck för mer trend</p>
+                    <div style={liveCardFooterGroupStyle}>
+                      <p style={{ ...liveCardFooterStyle, color: change.color, fontWeight: '700' }}>{changeSummary}</p>
+                      <p style={liveCardHintStyle}>Tryck för trend och dagsjämförelse</p>
                     </div>
                   </div>
                 )}
                 back={(
-                  <div style={{
-                    background: '#fff',
-                    borderRadius: '12px',
-                    padding: '15px',
-                    textAlign: 'left',
-                    border: '1px solid #d2dbe4',
-                    boxShadow: '0 1px 3px rgba(0, 0, 0, 0.08)',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '10px',
-                    height: '100%'
-                  }}>
+                  <div style={liveFlipCardBackStyle}>
                     <div>
-                      <p style={{ fontSize: '13px', fontWeight: '700', color: '#3366cc', margin: '0 0 8px 0' }}>{`${region.area} ${region.name}`}</p>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '10px' }}>
-                        <div style={{ background: '#f4f7fb', borderRadius: '10px', padding: '10px' }}>
-                          <p style={{ margin: '0 0 4px 0', fontSize: '11px', color: '#6b7280' }}>I går</p>
-                          <p style={{ margin: '0', fontSize: '15px', fontWeight: '700', color: '#1f2937' }}>{region.yesterday !== null ? `${formatNumber(region.yesterday, 2)} öre` : '—'}</p>
+                      <p style={liveCardTitleStyle}>{`${region.area} ${region.name}`}</p>
+                      <div style={{ ...liveCardMetricGridStyle, gap: '8px', marginBottom: '10px' }}>
+                        <div style={{ ...liveCardMetricStyle, padding: '9px 10px' }}>
+                          <p style={liveCardMetricLabelStyle}>I går</p>
+                          <p style={{ ...liveCardMetricValueStyle, fontSize: '14px' }}>{region.yesterday !== null ? `${formatNumber(region.yesterday, 2)} öre` : '—'}</p>
                         </div>
-                        <div style={{ background: '#f4f7fb', borderRadius: '10px', padding: '10px' }}>
-                          <p style={{ margin: '0 0 4px 0', fontSize: '11px', color: '#6b7280' }}>I dag</p>
-                          <p style={{ margin: '0', fontSize: '15px', fontWeight: '700', color: '#1f2937' }}>{region.today !== null ? `${formatNumber(region.today, 2)} öre` : '—'}</p>
+                        <div style={{ ...liveCardMetricStyle, padding: '9px 10px' }}>
+                          <p style={liveCardMetricLabelStyle}>I dag</p>
+                          <p style={{ ...liveCardMetricValueStyle, fontSize: '14px' }}>{region.today !== null ? `${formatNumber(region.today, 2)} öre` : '—'}</p>
                         </div>
                       </div>
-                      <div style={{ background: '#f4f7fb', borderRadius: '10px', padding: '10px', marginBottom: '10px' }}>
-                        <p style={{ margin: '0 0 4px 0', fontSize: '11px', color: '#6b7280' }}>Imorgon</p>
-                        <p style={{ margin: '0', fontSize: '15px', fontWeight: '700', color: '#1f2937' }}>{region.tomorrow !== null ? `${formatNumber(region.tomorrow, 2)} öre` : '—'}</p>
+                      <div style={{ ...liveCardMetricStyle, padding: '9px 10px', marginBottom: '10px' }}>
+                        <p style={liveCardMetricLabelStyle}>Imorgon</p>
+                        <p style={{ ...liveCardMetricValueStyle, fontSize: '14px' }}>{region.tomorrow !== null ? `${formatNumber(region.tomorrow, 2)} öre` : '—'}</p>
                       </div>
                     </div>
                     <SparklineChart history={region.history} color="#2f6fa3" fill="rgba(47, 111, 163, 0.12)" />
-                    <p style={{ margin: '0', fontSize: '11px', color: '#64748b', textAlign: 'center' }}>Senaste sju dagarnas medelpris. Tryck igen för framsidan.</p>
+                    <p style={{ ...liveCardFooterStyle, textAlign: 'center' }}>Senaste sju dagarnas medelpris. Tryck igen för framsidan.</p>
                   </div>
                 )}
               />
@@ -2954,21 +3048,12 @@ function App() {
           gap: '12px',
           width: '100%'
         }}>
-          <div style={{
-            background: 'rgba(255, 255, 255, 0.95)',
-            borderRadius: '14px',
-            padding: '16px',
-            border: '1px solid #d2dbe4',
-            boxShadow: '0 1px 3px rgba(0, 0, 0, 0.08)'
-          }}>
-            <p style={{ margin: '0 0 12px 0', fontSize: '14px', fontWeight: '800', color: '#2f6fa3', textAlign: 'center' }}>Marknad</p>
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
-              gap: '10px'
-            }}>
+          <div style={liveSectionCardStyle}>
+            <p style={liveSectionTitleStyle}>Marknad</p>
+            <div style={liveCardGridStyle}>
               {marketCards.map((item) => {
                 const change = getChangeDetails(item.currentValue, item.previousValue)
+                const changeSummary = change.delta !== null ? `${change.label} | ${change.percentLabel}` : 'Väntar på gårdagens värde'
 
                 return (
                   <FlipCard
@@ -2977,85 +3062,56 @@ function App() {
                     flipped={Boolean(flippedCards[`market-${item.key}`])}
                     onToggle={() => toggleCardFlip(`market-${item.key}`)}
                     front={(
-                      <div style={{
-                        background: '#f8fbff',
-                        border: '1px solid #dbe5ee',
-                        borderRadius: '12px',
-                        padding: '11px 10px',
-                        textAlign: 'center',
-                        minWidth: 0,
-                        display: 'flex',
-                        flexDirection: 'column',
-                        justifyContent: 'flex-start',
-                        height: '100%'
-                      }}>
+                      <div style={liveFlipCardFrontStyle}>
                         <div>
-                          <div style={{
-                            width: '36px',
-                            height: '36px',
-                            borderRadius: '14px',
-                            background: '#e8f0f8',
-                            color: '#2f6fa3',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            fontSize: item.key === 'brent' ? '12px' : '24px',
-                            fontWeight: '800',
-                            margin: '0 auto 6px auto'
-                          }}>
+                          <div style={{ ...liveCardIconStyle, width: '36px', height: '36px', fontSize: item.key === 'brent' ? '12px' : '24px', fontWeight: '800', marginBottom: '6px' }}>
                             {item.symbol}
                           </div>
-                          <p style={{ fontSize: '12px', fontWeight: '700', color: '#2f6fa3', margin: '0 0 5px 0', lineHeight: '1.25' }}>{item.label}</p>
-                          <h3 style={{ fontSize: '20px', fontWeight: '700', color: '#222', margin: '0 0 2px 0', whiteSpace: 'nowrap' }}>
+                          <p style={{ ...liveCardTitleStyle, marginBottom: '5px', lineHeight: '1.25' }}>{item.label}</p>
+                          <h3 style={{ ...liveCardValueStyle, fontSize: '20px', marginBottom: '2px' }}>
                             {item.displayValue}
                           </h3>
-                          <p style={{ fontSize: '12px', color: '#6b7280', margin: '0', lineHeight: '1.25' }}>{item.sublabel}</p>
-                          <div style={{ marginTop: '6px', background: '#fff', borderRadius: '10px', padding: '7px 9px' }}>
-                            <p style={{ margin: '0 0 3px 0', fontSize: '11px', color: '#6b7280' }}>I går</p>
-                            <p style={{ margin: '0', fontSize: '14px', fontWeight: '700', color: '#1f2937' }}>{item.previousDisplayValue}</p>
+                          <p style={liveCardMetaStyle}>{item.sublabel}</p>
+                        </div>
+                        <div style={liveCardMetricGridStyle}>
+                          <div style={liveCardMetricStyle}>
+                            <p style={liveCardMetricLabelStyle}>I går</p>
+                            <p style={liveCardMetricValueStyle}>{item.previousDisplayValue}</p>
+                          </div>
+                          <div style={liveCardMetricStyle}>
+                            <p style={liveCardMetricLabelStyle}>Förändring</p>
+                            <p style={{ ...liveCardMetricValueStyle, color: change.color }}>{change.label}</p>
                           </div>
                         </div>
-                        <div style={{ marginTop: '6px', paddingTop: '0' }}>
-                          <p style={{ margin: '0', fontSize: '11px', color: change.color, fontWeight: '700', lineHeight: '1.25' }}>
-                            {change.delta !== null ? `${change.label} | ${change.percentLabel}` : 'Väntar på gårdagens värde'}
-                          </p>
+                        <div style={liveCardFooterGroupStyle}>
+                          <p style={{ ...liveCardFooterStyle, color: change.color, fontWeight: '700' }}>{changeSummary}</p>
+                          <p style={liveCardHintStyle}>{item.detailLines[0] ?? 'Tryck för mer marknadsdata'}</p>
                         </div>
                       </div>
                     )}
                     back={(
-                      <div style={{
-                        background: '#f8fbff',
-                        border: '1px solid #dbe5ee',
-                        borderRadius: '12px',
-                        padding: '14px 12px',
-                        textAlign: 'left',
-                        minWidth: 0,
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: '10px',
-                        height: '100%'
-                      }}>
+                      <div style={liveFlipCardBackStyle}>
                         <div>
-                          <p style={{ fontSize: '12px', fontWeight: '700', color: '#2f6fa3', margin: '0 0 8px 0' }}>{item.label}</p>
+                          <p style={{ ...liveCardTitleStyle, marginBottom: '8px' }}>{item.label}</p>
                           <div style={{ display: 'grid', gap: '6px', marginBottom: '10px' }}>
-                            <div style={{ background: '#fff', borderRadius: '10px', padding: '8px 10px' }}>
-                              <p style={{ margin: '0 0 3px 0', fontSize: '11px', color: '#6b7280' }}>I dag</p>
-                              <p style={{ margin: '0', fontSize: '15px', fontWeight: '700', color: '#1f2937' }}>{item.displayValue}</p>
+                            <div style={liveCardMetricStyle}>
+                              <p style={liveCardMetricLabelStyle}>I dag</p>
+                              <p style={{ ...liveCardMetricValueStyle, fontSize: '14px' }}>{item.displayValue}</p>
                             </div>
-                            <div style={{ background: '#fff', borderRadius: '10px', padding: '8px 10px' }}>
-                              <p style={{ margin: '0 0 3px 0', fontSize: '11px', color: '#6b7280' }}>I går</p>
-                              <p style={{ margin: '0', fontSize: '15px', fontWeight: '700', color: '#1f2937' }}>{item.previousDisplayValue}</p>
+                            <div style={liveCardMetricStyle}>
+                              <p style={liveCardMetricLabelStyle}>I går</p>
+                              <p style={{ ...liveCardMetricValueStyle, fontSize: '14px' }}>{item.previousDisplayValue}</p>
                             </div>
-                            <div style={{ background: '#fff', borderRadius: '10px', padding: '8px 10px' }}>
-                              <p style={{ margin: '0 0 3px 0', fontSize: '11px', color: '#6b7280' }}>Förändring</p>
-                              <p style={{ margin: '0', fontSize: '15px', fontWeight: '700', color: change.color }}>{`${change.label} | ${change.percentLabel}`}</p>
+                            <div style={liveCardMetricStyle}>
+                              <p style={liveCardMetricLabelStyle}>Förändring</p>
+                              <p style={{ ...liveCardMetricValueStyle, fontSize: '14px', color: change.color }}>{changeSummary}</p>
                             </div>
                           </div>
                         </div>
                         <SparklineChart history={item.history} color="#2f6fa3" fill="rgba(47, 111, 163, 0.14)" />
                         <div style={{ display: 'grid', gap: '4px' }}>
                           {item.detailLines.map((line) => (
-                            <p key={line} style={{ margin: '0', fontSize: '11px', color: '#64748b' }}>{line}</p>
+                            <p key={line} style={liveCardFooterStyle}>{line}</p>
                           ))}
                         </div>
                       </div>
@@ -3066,152 +3122,108 @@ function App() {
             </div>
           </div>
 
-          <div style={{
-            background: 'rgba(255, 255, 255, 0.95)',
-            borderRadius: '14px',
-            padding: '16px',
-            border: '1px solid #d2dbe4',
-            boxShadow: '0 1px 3px rgba(0, 0, 0, 0.08)'
-          }}>
-            <p style={{ margin: '0 0 12px 0', fontSize: '14px', fontWeight: '800', color: '#2f6fa3', textAlign: 'center' }}>Väderduell</p>
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
-              gap: '10px'
-            }}>
-              {weatherCards.map((location) => (
+          <div style={liveSectionCardStyle}>
+            <p style={liveSectionTitleStyle}>Väderduell</p>
+            <div style={liveCardGridStyle}>
+              {weatherCards.map((location) => {
+                const weatherSummary = [
+                  Number.isFinite(location.precipitationProbability) ? `Regnrisk ${formatNumber(location.precipitationProbability, 0)}%` : null,
+                  Number.isFinite(location.humidity) ? `Fukt ${formatNumber(location.humidity, 0)}%` : null
+                ].filter(Boolean).join(' | ')
+
+                return (
                 <FlipCard
                   key={location.key}
-                  minHeight={286}
+                  minHeight={320}
                   flipped={Boolean(flippedCards[`weather-${location.key}`])}
                   onToggle={() => toggleCardFlip(`weather-${location.key}`)}
                   front={(
-                    <div
-                      style={{
-                        background: '#f8fbff',
-                        border: '1px solid #dbe5ee',
-                        borderRadius: '12px',
-                        padding: '11px 10px',
-                        textAlign: 'center',
-                        minWidth: 0,
-                        display: 'flex',
-                        flexDirection: 'column',
-                        justifyContent: 'flex-start',
-                        height: '100%'
-                      }}
-                    >
+                    <div style={liveFlipCardFrontStyle}>
                       <div>
-                        <div style={{
-                          width: '40px',
-                          height: '40px',
-                          borderRadius: '14px',
-                          background: '#e8f0f8',
-                          color: '#2f6fa3',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          fontSize: '24px',
-                          fontWeight: '700',
-                          margin: '0 auto 8px auto'
-                        }}>
+                        <div style={{ ...liveCardIconStyle, fontSize: '24px' }}>
                           {getWeatherSymbolFromCode(location.weatherCode)}
                         </div>
-                        <p style={{ fontSize: '12px', fontWeight: '700', color: '#2f6fa3', margin: '0 0 6px 0', lineHeight: '1.3' }}>{location.name}</p>
-                        <h3 style={{ fontSize: '21px', fontWeight: '700', color: '#222', margin: '0 0 3px 0', whiteSpace: 'nowrap' }}>
+                        <p style={liveCardTitleStyle}>{location.name}</p>
+                        <h3 style={liveCardValueStyle}>
                           {location && Number.isFinite(location.temperature) ? `${formatNumber(location.temperature)}°` : '—'}
                         </h3>
-                        <p style={{ fontSize: '12px', color: '#4b5563', margin: '0 0 6px 0', lineHeight: '1.35' }}>
+                        <p style={liveCardMetaStyle}>
                           {location?.description ?? 'Hämtar väder...'}
                         </p>
-                        <div style={{ display: 'grid', gap: '6px' }}>
-                          <div style={{ background: '#fff', borderRadius: '10px', padding: '8px 10px' }}>
-                            <p style={{ margin: '0 0 3px 0', fontSize: '11px', color: '#6b7280' }}>Känns som</p>
-                            <p style={{ margin: '0', fontSize: '14px', fontWeight: '700', color: '#1f2937' }}>
-                              {location && Number.isFinite(location.apparentTemperature) ? `${formatNumber(location.apparentTemperature)}°` : '—'}
-                            </p>
-                          </div>
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
-                            <div style={{ background: '#fff', borderRadius: '10px', padding: '8px 10px' }}>
-                              <p style={{ margin: '0 0 3px 0', fontSize: '11px', color: '#6b7280' }}>Regn</p>
-                              <p style={{ margin: '0', fontSize: '13px', fontWeight: '700', color: '#1f2937' }}>{location && Number.isFinite(location.precipitationProbability) ? `${formatNumber(location.precipitationProbability, 0)}%` : '—'}</p>
-                            </div>
-                            <div style={{ background: '#fff', borderRadius: '10px', padding: '8px 10px' }}>
-                              <p style={{ margin: '0 0 3px 0', fontSize: '11px', color: '#6b7280' }}>Fukt</p>
-                              <p style={{ margin: '0', fontSize: '13px', fontWeight: '700', color: '#1f2937' }}>{location && Number.isFinite(location.humidity) ? `${formatNumber(location.humidity, 0)}%` : '—'}</p>
-                            </div>
-                          </div>
+                      </div>
+                      <div style={liveCardMetricGridStyle}>
+                        <div style={liveCardMetricStyle}>
+                          <p style={liveCardMetricLabelStyle}>Känns som</p>
+                          <p style={liveCardMetricValueStyle}>
+                            {location && Number.isFinite(location.apparentTemperature) ? `${formatNumber(location.apparentTemperature)}°` : '—'}
+                          </p>
                         </div>
+                        <div style={liveCardMetricStyle}>
+                          <p style={liveCardMetricLabelStyle}>Vind</p>
+                          <p style={liveCardMetricValueStyle}>
+                            {location && Number.isFinite(location.windSpeed) ? `${formatNumber(location.windSpeed)} m/s` : '—'}
+                          </p>
+                        </div>
+                      </div>
+                      <div style={liveCardFooterGroupStyle}>
+                        <p style={liveCardFooterStyle}>{weatherSummary || 'Fler väderdetaljer på baksidan'}</p>
+                        <p style={liveCardHintStyle}>{weatherLocationDetails[location.key]?.region ?? ''}</p>
                       </div>
                     </div>
                   )}
                   back={(
-                    <div
-                      style={{
-                        background: '#f8fbff',
-                        border: '1px solid #dbe5ee',
-                        borderRadius: '12px',
-                        padding: '14px 12px',
-                        textAlign: 'left',
-                        minWidth: 0,
-                        display: 'grid',
-                        gap: '8px',
-                        alignContent: 'start',
-                        height: '100%'
-                      }}
-                    >
-                      <p style={{ fontSize: '12px', fontWeight: '700', color: '#2f6fa3', margin: '0' }}>{location.name}</p>
-                      <p style={{ margin: '0', fontSize: '11px', color: '#64748b' }}>{weatherLocationDetails[location.key]?.region ?? ''}</p>
-                      <div style={{ background: '#fff', borderRadius: '10px', padding: '9px 10px' }}>
-                        <p style={{ margin: '0 0 3px 0', fontSize: '11px', color: '#6b7280' }}>Känns som</p>
-                        <p style={{ margin: '0', fontSize: '15px', fontWeight: '700', color: '#1f2937' }}>
+                    <div style={{ ...liveFlipCardBackStyle, display: 'grid', gap: '8px', alignContent: 'start' }}>
+                      <p style={{ ...liveCardTitleStyle, margin: '0' }}>{location.name}</p>
+                      <p style={liveCardFooterStyle}>{weatherLocationDetails[location.key]?.region ?? ''}</p>
+                      <div style={{ ...liveCardMetricStyle, padding: '9px 10px' }}>
+                        <p style={liveCardMetricLabelStyle}>Känns som</p>
+                        <p style={{ ...liveCardMetricValueStyle, fontSize: '14px' }}>
                           {location && Number.isFinite(location.apparentTemperature) ? `${formatNumber(location.apparentTemperature)}°` : '—'}
                         </p>
                       </div>
-                      <div style={{ background: '#fff', borderRadius: '10px', padding: '9px 10px' }}>
-                        <p style={{ margin: '0 0 3px 0', fontSize: '11px', color: '#6b7280' }}>Dagens spann</p>
-                        <p style={{ margin: '0', fontSize: '14px', fontWeight: '700', color: '#1f2937' }}>
+                      <div style={{ ...liveCardMetricStyle, padding: '9px 10px' }}>
+                        <p style={liveCardMetricLabelStyle}>Dagens spann</p>
+                        <p style={{ ...liveCardMetricValueStyle, fontSize: '14px' }}>
                           {location && Number.isFinite(location.minTemperature) && Number.isFinite(location.maxTemperature) ? `${formatNumber(location.minTemperature)}° / ${formatNumber(location.maxTemperature)}°` : '—'}
                         </p>
                       </div>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                        <div style={{ background: '#fff', borderRadius: '10px', padding: '9px 10px' }}>
-                          <p style={{ margin: '0 0 3px 0', fontSize: '11px', color: '#6b7280' }}>Regnrisk</p>
-                          <p style={{ margin: '0', fontSize: '14px', fontWeight: '700', color: '#1f2937' }}>{location && Number.isFinite(location.precipitationProbability) ? `${formatNumber(location.precipitationProbability, 0)}%` : '—'}</p>
+                      <div style={{ ...liveCardMetricGridStyle, gap: '8px' }}>
+                        <div style={{ ...liveCardMetricStyle, padding: '9px 10px' }}>
+                          <p style={liveCardMetricLabelStyle}>Regnrisk</p>
+                          <p style={{ ...liveCardMetricValueStyle, fontSize: '14px' }}>{location && Number.isFinite(location.precipitationProbability) ? `${formatNumber(location.precipitationProbability, 0)}%` : '—'}</p>
                         </div>
-                        <div style={{ background: '#fff', borderRadius: '10px', padding: '9px 10px' }}>
-                          <p style={{ margin: '0 0 3px 0', fontSize: '11px', color: '#6b7280' }}>Vind</p>
-                          <p style={{ margin: '0', fontSize: '14px', fontWeight: '700', color: '#1f2937' }}>{location && Number.isFinite(location.windSpeed) ? `${formatNumber(location.windSpeed)} m/s` : '—'}</p>
-                        </div>
-                      </div>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                        <div style={{ background: '#fff', borderRadius: '10px', padding: '9px 10px' }}>
-                          <p style={{ margin: '0 0 3px 0', fontSize: '11px', color: '#6b7280' }}>UV max</p>
-                          <p style={{ margin: '0', fontSize: '14px', fontWeight: '700', color: '#1f2937' }}>{location && Number.isFinite(location.uvIndexMax) ? formatNumber(location.uvIndexMax, 1) : '—'}</p>
-                        </div>
-                        <div style={{ background: '#fff', borderRadius: '10px', padding: '9px 10px' }}>
-                          <p style={{ margin: '0 0 3px 0', fontSize: '11px', color: '#6b7280' }}>Luftfukt</p>
-                          <p style={{ margin: '0', fontSize: '14px', fontWeight: '700', color: '#1f2937' }}>{location && Number.isFinite(location.humidity) ? `${formatNumber(location.humidity, 0)}%` : '—'}</p>
+                        <div style={{ ...liveCardMetricStyle, padding: '9px 10px' }}>
+                          <p style={liveCardMetricLabelStyle}>Vind</p>
+                          <p style={{ ...liveCardMetricValueStyle, fontSize: '14px' }}>{location && Number.isFinite(location.windSpeed) ? `${formatNumber(location.windSpeed)} m/s` : '—'}</p>
                         </div>
                       </div>
-                      <div style={{ background: '#fff', borderRadius: '10px', padding: '9px 10px' }}>
-                        <p style={{ margin: '0 0 3px 0', fontSize: '11px', color: '#6b7280' }}>Sol upp / ner</p>
-                        <p style={{ margin: '0', fontSize: '13px', fontWeight: '700', color: '#1f2937' }}>
+                      <div style={{ ...liveCardMetricGridStyle, gap: '8px' }}>
+                        <div style={{ ...liveCardMetricStyle, padding: '9px 10px' }}>
+                          <p style={liveCardMetricLabelStyle}>UV max</p>
+                          <p style={{ ...liveCardMetricValueStyle, fontSize: '14px' }}>{location && Number.isFinite(location.uvIndexMax) ? formatNumber(location.uvIndexMax, 1) : '—'}</p>
+                        </div>
+                        <div style={{ ...liveCardMetricStyle, padding: '9px 10px' }}>
+                          <p style={liveCardMetricLabelStyle}>Luftfukt</p>
+                          <p style={{ ...liveCardMetricValueStyle, fontSize: '14px' }}>{location && Number.isFinite(location.humidity) ? `${formatNumber(location.humidity, 0)}%` : '—'}</p>
+                        </div>
+                      </div>
+                      <div style={{ ...liveCardMetricStyle, padding: '9px 10px' }}>
+                        <p style={liveCardMetricLabelStyle}>Sol upp / ner</p>
+                        <p style={liveCardMetricValueStyle}>
                           {location?.sunrise ? new Date(location.sunrise).toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' }) : '—'} / {location?.sunset ? new Date(location.sunset).toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' }) : '—'}
                         </p>
                       </div>
-                      <div style={{ background: '#fff', borderRadius: '10px', padding: '9px 10px' }}>
-                        <p style={{ margin: '0 0 3px 0', fontSize: '11px', color: '#6b7280' }}>Stadskänsla</p>
-                        <p style={{ margin: '0', fontSize: '11px', color: '#475569', lineHeight: '1.5' }}>
-                          {weatherLocationDetails[location.key]?.vibe ?? ''}
+                      <div style={{ ...liveCardMetricStyle, padding: '9px 10px' }}>
+                        <p style={liveCardMetricLabelStyle}>Lokal koll</p>
+                        <p style={liveCardFooterStyle}>
+                          {weatherLocationDetails[location.key]?.vibe ?? ''} {weatherLocationDetails[location.key]?.readout ?? ''}
                         </p>
                       </div>
-                      <p style={{ margin: '0', fontSize: '11px', color: '#64748b' }}>
-                        {weatherLocationDetails[location.key]?.readout ?? ''}
-                      </p>
                     </div>
                   )}
                 />
-              ))}
+                )
+              })}
             </div>
             <div style={{
               marginTop: '12px',
