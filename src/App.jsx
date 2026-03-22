@@ -2559,13 +2559,13 @@ function App() {
                 {techHighlights.map((item) => (
                   <FlipCard
                     key={item.title}
-                    minHeight={102}
+                    minHeight={110}
                     flipped={Boolean(flippedCards[`tech-${item.title}`])}
                     onToggle={() => toggleCardFlip(`tech-${item.title}`)}
                     front={(
                       <div style={{
                         background: '#f4f7fb',
-                        padding: '10px 11px',
+                        padding: '9px 10px',
                         borderRadius: '12px',
                         borderLeft: '4px solid #2f6fa3',
                         display: 'flex',
@@ -2586,7 +2586,7 @@ function App() {
                     back={(
                       <div style={{
                         background: '#f4f7fb',
-                        padding: '10px 11px',
+                        padding: '9px 10px',
                         borderRadius: '12px',
                         borderLeft: '4px solid #2f6fa3',
                         display: 'grid',
@@ -2638,13 +2638,13 @@ function App() {
                 {patternHighlights.map((item) => (
                   <FlipCard
                     key={item.title}
-                    minHeight={102}
+                    minHeight={110}
                     flipped={Boolean(flippedCards[`pattern-${item.title}`])}
                     onToggle={() => toggleCardFlip(`pattern-${item.title}`)}
                     front={(
                       <div style={{
                         background: '#f8fbff',
-                        padding: '10px 11px',
+                        padding: '9px 10px',
                         borderRadius: '12px',
                         borderLeft: '4px solid #7aa5c7',
                         display: 'flex',
@@ -2663,7 +2663,7 @@ function App() {
                     back={(
                       <div style={{
                         background: '#f8fbff',
-                        padding: '10px 11px',
+                        padding: '9px 10px',
                         borderRadius: '12px',
                         borderLeft: '4px solid #7aa5c7',
                         display: 'grid',
@@ -2693,13 +2693,13 @@ function App() {
                 {toolingHighlights.map((item) => (
                   <FlipCard
                     key={item.title}
-                    minHeight={102}
+                    minHeight={110}
                     flipped={Boolean(flippedCards[`tool-${item.title}`])}
                     onToggle={() => toggleCardFlip(`tool-${item.title}`)}
                     front={(
                       <div style={{
                         background: '#f4f7fb',
-                        padding: '10px 11px',
+                        padding: '9px 10px',
                         borderRadius: '12px',
                         borderLeft: '4px solid #2f6fa3',
                         display: 'flex',
@@ -2718,7 +2718,7 @@ function App() {
                     back={(
                       <div style={{
                         background: '#f4f7fb',
-                        padding: '10px 11px',
+                        padding: '9px 10px',
                         borderRadius: '12px',
                         borderLeft: '4px solid #2f6fa3',
                         display: 'grid',
@@ -2973,7 +2973,7 @@ function App() {
                 return (
                   <FlipCard
                     key={item.key}
-                    minHeight={278}
+                    minHeight={286}
                     flipped={Boolean(flippedCards[`market-${item.key}`])}
                     onToggle={() => toggleCardFlip(`market-${item.key}`)}
                     front={(
@@ -2981,18 +2981,18 @@ function App() {
                         background: '#f8fbff',
                         border: '1px solid #dbe5ee',
                         borderRadius: '12px',
-                        padding: '14px 12px',
+                        padding: '11px 10px',
                         textAlign: 'center',
                         minWidth: 0,
                         display: 'flex',
                         flexDirection: 'column',
-                        justifyContent: 'space-between',
+                        justifyContent: 'flex-start',
                         height: '100%'
                       }}>
                         <div>
                           <div style={{
-                            width: '44px',
-                            height: '44px',
+                            width: '36px',
+                            height: '36px',
                             borderRadius: '14px',
                             background: '#e8f0f8',
                             color: '#2f6fa3',
@@ -3001,25 +3001,24 @@ function App() {
                             justifyContent: 'center',
                             fontSize: item.key === 'brent' ? '12px' : '24px',
                             fontWeight: '800',
-                            margin: '0 auto 10px auto'
+                            margin: '0 auto 6px auto'
                           }}>
                             {item.symbol}
                           </div>
-                          <p style={{ fontSize: '12px', fontWeight: '700', color: '#2f6fa3', margin: '0 0 8px 0', whiteSpace: 'nowrap' }}>{item.label}</p>
-                          <h3 style={{ fontSize: '22px', fontWeight: '700', color: '#222', margin: '0 0 4px 0', whiteSpace: 'nowrap' }}>
+                          <p style={{ fontSize: '12px', fontWeight: '700', color: '#2f6fa3', margin: '0 0 5px 0', lineHeight: '1.25' }}>{item.label}</p>
+                          <h3 style={{ fontSize: '20px', fontWeight: '700', color: '#222', margin: '0 0 2px 0', whiteSpace: 'nowrap' }}>
                             {item.displayValue}
                           </h3>
-                          <p style={{ fontSize: '12px', color: '#6b7280', margin: '0', whiteSpace: 'nowrap' }}>{item.sublabel}</p>
-                          <div style={{ marginTop: '8px', background: '#fff', borderRadius: '10px', padding: '8px 10px' }}>
+                          <p style={{ fontSize: '12px', color: '#6b7280', margin: '0', lineHeight: '1.25' }}>{item.sublabel}</p>
+                          <div style={{ marginTop: '6px', background: '#fff', borderRadius: '10px', padding: '7px 9px' }}>
                             <p style={{ margin: '0 0 3px 0', fontSize: '11px', color: '#6b7280' }}>I går</p>
                             <p style={{ margin: '0', fontSize: '14px', fontWeight: '700', color: '#1f2937' }}>{item.previousDisplayValue}</p>
                           </div>
                         </div>
-                        <div style={{ marginTop: '10px' }}>
-                          <p style={{ margin: '0 0 4px 0', fontSize: '11px', color: change.color, fontWeight: '700' }}>
+                        <div style={{ marginTop: '6px', paddingTop: '0' }}>
+                          <p style={{ margin: '0', fontSize: '11px', color: change.color, fontWeight: '700', lineHeight: '1.25' }}>
                             {change.delta !== null ? `${change.label} | ${change.percentLabel}` : 'Väntar på gårdagens värde'}
                           </p>
-                          <p style={{ margin: '0', fontSize: '10px', color: '#94a3b8' }}>Tryck för fördjupning</p>
                         </div>
                       </div>
                     )}
@@ -3083,7 +3082,7 @@ function App() {
               {weatherCards.map((location) => (
                 <FlipCard
                   key={location.key}
-                  minHeight={300}
+                  minHeight={286}
                   flipped={Boolean(flippedCards[`weather-${location.key}`])}
                   onToggle={() => toggleCardFlip(`weather-${location.key}`)}
                   front={(
@@ -3092,19 +3091,19 @@ function App() {
                         background: '#f8fbff',
                         border: '1px solid #dbe5ee',
                         borderRadius: '12px',
-                        padding: '14px 12px',
+                        padding: '11px 10px',
                         textAlign: 'center',
                         minWidth: 0,
                         display: 'flex',
                         flexDirection: 'column',
-                        justifyContent: 'space-between',
+                        justifyContent: 'flex-start',
                         height: '100%'
                       }}
                     >
                       <div>
                         <div style={{
-                          width: '44px',
-                          height: '44px',
+                          width: '40px',
+                          height: '40px',
                           borderRadius: '14px',
                           background: '#e8f0f8',
                           color: '#2f6fa3',
@@ -3113,15 +3112,15 @@ function App() {
                           justifyContent: 'center',
                           fontSize: '24px',
                           fontWeight: '700',
-                          margin: '0 auto 10px auto'
+                          margin: '0 auto 8px auto'
                         }}>
                           {getWeatherSymbolFromCode(location.weatherCode)}
                         </div>
-                        <p style={{ fontSize: '12px', fontWeight: '700', color: '#2f6fa3', margin: '0 0 8px 0', whiteSpace: 'nowrap' }}>{location.name}</p>
-                        <h3 style={{ fontSize: '22px', fontWeight: '700', color: '#222', margin: '0 0 4px 0', whiteSpace: 'nowrap' }}>
+                        <p style={{ fontSize: '12px', fontWeight: '700', color: '#2f6fa3', margin: '0 0 6px 0', lineHeight: '1.3' }}>{location.name}</p>
+                        <h3 style={{ fontSize: '21px', fontWeight: '700', color: '#222', margin: '0 0 3px 0', whiteSpace: 'nowrap' }}>
                           {location && Number.isFinite(location.temperature) ? `${formatNumber(location.temperature)}°` : '—'}
                         </h3>
-                        <p style={{ fontSize: '12px', color: '#4b5563', margin: '0 0 8px 0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        <p style={{ fontSize: '12px', color: '#4b5563', margin: '0 0 6px 0', lineHeight: '1.35' }}>
                           {location?.description ?? 'Hämtar väder...'}
                         </p>
                         <div style={{ display: 'grid', gap: '6px' }}>
@@ -3143,7 +3142,6 @@ function App() {
                           </div>
                         </div>
                       </div>
-                      <p style={{ margin: '10px 0 0 0', fontSize: '10px', color: '#94a3b8' }}>Tryck för mer</p>
                     </div>
                   )}
                   back={(
