@@ -1778,12 +1778,12 @@ function App() {
   }
   const liveFlipCardFrontStyle = {
     ...liveFlipCardBaseStyle,
-    padding: '11px 10px',
+    padding: '13px 12px',
     textAlign: 'center',
     display: 'flex',
     flexDirection: 'column',
     justifyContent: 'flex-start',
-    gap: '8px'
+    gap: '10px'
   }
   const liveFlipCardBackStyle = {
     ...liveFlipCardBaseStyle,
@@ -1803,57 +1803,57 @@ function App() {
     alignItems: 'center',
     justifyContent: 'center',
     fontWeight: '700',
-    margin: '0 auto 6px auto'
+    margin: '0 auto 8px auto'
   }
   const liveCardTitleStyle = {
     fontSize: '12px',
     fontWeight: '700',
     color: '#2f6fa3',
-    margin: '0 0 4px 0',
-    lineHeight: '1.2'
+    margin: '0 0 5px 0',
+    lineHeight: '1.28'
   }
   const liveCardValueStyle = {
     fontSize: '21px',
     fontWeight: '700',
     color: '#222',
-    margin: '0 0 2px 0',
+    margin: '0 0 4px 0',
     whiteSpace: 'nowrap'
   }
   const liveCardMetaStyle = {
     fontSize: '12px',
     color: '#4b5563',
     margin: '0',
-    lineHeight: '1.2'
+    lineHeight: '1.35'
   }
   const liveCardMetricGridStyle = {
     display: 'grid',
     gridTemplateColumns: '1fr 1fr',
-    gap: '5px'
+    gap: '7px'
   }
   const liveCardMetricStyle = {
     background: '#fff',
     borderRadius: '10px',
-    padding: '6px 8px',
+    padding: '8px 10px',
     border: '1px solid #edf2f7'
   }
   const liveCardMetricLabelStyle = {
-    margin: '0 0 2px 0',
-    fontSize: '10px',
+    margin: '0 0 4px 0',
+    fontSize: '11px',
     color: '#6b7280',
-    lineHeight: '1.15'
+    lineHeight: '1.2'
   }
   const liveCardMetricValueStyle = {
     margin: '0',
-    fontSize: '12px',
+    fontSize: '13px',
     fontWeight: '700',
     color: '#1f2937',
-    lineHeight: '1.2'
+    lineHeight: '1.3'
   }
   const liveCardFooterStyle = {
     margin: '0',
     fontSize: '11px',
     color: '#64748b',
-    lineHeight: '1.3'
+    lineHeight: '1.4'
   }
   const liveCardHintStyle = {
     margin: '0',
@@ -1862,7 +1862,7 @@ function App() {
   }
   const liveCardFooterGroupStyle = {
     display: 'grid',
-    gap: '3px'
+    gap: '5px'
   }
 
   return (
@@ -2911,7 +2911,7 @@ function App() {
             return (
               <FlipCard
                 key={region.area}
-                minHeight={272}
+                minHeight={284}
                 flipped={Boolean(flippedCards[`spot-${region.area}`])}
                 onToggle={() => toggleCardFlip(`spot-${region.area}`)}
                 front={(
@@ -3058,7 +3058,7 @@ function App() {
                 return (
                   <FlipCard
                     key={item.key}
-                    minHeight={286}
+                    minHeight={300}
                     flipped={Boolean(flippedCards[`market-${item.key}`])}
                     onToggle={() => toggleCardFlip(`market-${item.key}`)}
                     front={(
@@ -3134,7 +3134,7 @@ function App() {
                 return (
                 <FlipCard
                   key={location.key}
-                  minHeight={320}
+                  minHeight={336}
                   flipped={Boolean(flippedCards[`weather-${location.key}`])}
                   onToggle={() => toggleCardFlip(`weather-${location.key}`)}
                   front={(
