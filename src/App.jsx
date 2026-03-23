@@ -1097,6 +1097,7 @@ function App() {
   const [loading, setLoading] = useState(false)
   const [dateTime, setDateTime] = useState(new Date())
   const [showInfo, setShowInfo] = useState(false)
+  const [showInfoBack, setShowInfoBack] = useState(false)
   const [flippedCards, setFlippedCards] = useState({})
   const activeMovieRequestRef = useRef(0)
   const [exchangeRates, setExchangeRates] = useState({
@@ -1222,6 +1223,16 @@ function App() {
       ...current,
       [cardKey]: !current[cardKey]
     }))
+  }
+
+  const openInfoPanel = () => {
+    setShowInfo(true)
+    setShowInfoBack(false)
+  }
+
+  const closeInfoPanel = () => {
+    setShowInfo(false)
+    setShowInfoBack(false)
   }
 
   useEffect(() => {
@@ -1562,22 +1573,22 @@ function App() {
     {
       title: 'Frontend',
       meta: 'React 19 + Hooks',
-      text: 'React 19, React DOM och hooks driver gränssnittet, state och de interaktiva korten.'
+      text: 'React 19 driver gränssnittet, lokalt state och de interaktiva korten med snabb respons i browsern.'
     },
     {
       title: 'Serverlager',
       meta: 'Vercel Functions',
-      text: 'Vercel Functions används som tunt backend-lager för filmdata, olja och nyhetsflash.'
+      text: 'Vercel Functions fungerar som ett tunt backend-lager för filmdata, olja och nyhetsflash.'
     },
     {
       title: 'Bygg & deploy',
       meta: 'Vite + GitHub + Vercel',
-      text: 'Vite bygger appen, Node.js kör verktygen lokalt och Vercel deployar från GitHub.'
+      text: 'Vite bygger appen, Node.js kör verktygen lokalt och Vercel deployar automatiskt från GitHub.'
     },
     {
       title: 'AI & workflow',
       meta: 'Codex + BMAD',
-      text: 'Codex användes i kodningen och repo:t innehåller BMAD-artifakter för planering och implementation.'
+      text: 'Codex användes i utvecklingen och repo:t innehåller BMAD-artifakter för planering, iteration och implementation.'
     }
   ]
   const weatherLocationDetails = {
@@ -1595,71 +1606,71 @@ function App() {
   const techHighlights = [
     {
       title: 'React + Hooks',
-      text: 'Driver hela UI:t och all state i appen.',
-      details: 'useState håller reda på frågor, livekort, flip-status och filmresultat. useEffect används för klockan och för att starta hämtningar när appen laddas.',
+      text: 'Driver hela gränssnittet och all interaktion i appen.',
+      details: 'React 19 renderar hela upplevelsen i ett sammanhållet komponentträd. useState håller ihop frågor, livekort, flip-status och filmresultat, medan useEffect startar klockan och de initiala datahämtningarna när sidan laddas.',
       learnMoreLabel: 'react.dev/learn',
       learnMoreUrl: 'https://react.dev/learn'
     },
     {
       title: 'Vite',
-      text: 'Lokal utveckling, snabb build och proxy till lokala API-rutter.',
-      details: 'Vite gör att frontend känns snabb i utveckling och hanterar produktionsbygget inför Vercel. I repo:t finns också en lokal brygga så att /api/world och filmanrop fungerar under npm run dev.',
+      text: 'Snabb lokal utveckling, build och enkel väg till produktion.',
+      details: 'Vite ger kort starttid i utveckling, snabb HMR när UI:t ändras och ett produktionsbygge som passar bra för Vercel. I repo:t finns också en lokal brygga så att /api/world och filmanrop fungerar smidigt under npm run dev.',
       learnMoreLabel: 'vite.dev/guide',
       learnMoreUrl: 'https://vite.dev/guide/'
     },
     {
       title: 'Vercel Functions',
       text: 'Serverkod för film, Brentolja och nyhetsflash.',
-      details: 'Funktionerna används för sådant som inte borde ligga öppet i browsern, till exempel privata API-nycklar och hämtning av data som är mer robust på serversidan.',
+      details: 'Funktionerna används för sådant som inte bör ligga öppet i browsern, som privata API-nycklar, externa anrop och datakällor som blir stabilare när de hämtas på serversidan innan de skickas vidare till klienten.',
       learnMoreLabel: 'vercel.com/docs/functions',
       learnMoreUrl: 'https://vercel.com/docs/functions'
     },
     {
       title: 'Wikipedia API',
-      text: 'Snabba faktasvar och bilder till generell fråga.',
-      details: 'Appen använder både sök och summary-endpointen för att hitta rätt ämne, korta ner texten och plocka en passande bild när en sådan finns.',
+      text: 'Faktasvar och bilder för allmänna frågor.',
+      details: 'Appen använder både sök och summary-endpointen för att hitta rätt ämne, plocka fram en kort introduktion och komplettera med en passande bild när en sådan finns tillgänglig.',
       learnMoreLabel: 'mediawiki.org/wiki/API:REST_API',
       learnMoreUrl: 'https://www.mediawiki.org/wiki/API:REST_API'
     },
     {
       title: 'OMDb + TMDB',
-      text: 'Filmbetyg, posters, svenska streamingtjänster och uppföljare.',
-      details: 'OMDb står främst för IMDb- och Rotten Tomatoes-betyg medan TMDB hjälper till med streaming i Sverige. Jag har också lagt på tolerans för stavfel och en jämförelserad för flera filmer i samma serie.',
+      text: 'Filmbetyg, posters, svenska streamingtjänster och seriejämförelser.',
+      details: 'OMDb står främst för IMDb- och Rotten Tomatoes-betyg medan TMDB hjälper till med posters, träffsäker matchning och streaming i Sverige. Flödet är också byggt för att tåla lättare felstavning och kunna hitta närliggande filmer i samma serie.',
       learnMoreLabel: 'omdbapi.com / developer.themoviedb.org',
       learnMoreUrl: 'https://developer.themoviedb.org/docs/getting-started'
     },
     {
       title: 'Frankfurter + Elpriset just nu',
-      text: 'Valutor och elpriser med dag-jämförelser.',
-      details: 'Valutakorten visar dagens nivå mot gårdagen och elpriserna bygger på dagliga medelvärden i öre per kWh. Historiken används för små trendgrafer i korten.',
+      text: 'Valutor och elpriser med dagsjämförelser och trendspår.',
+      details: 'Valutakorten visar dagens nivå mot gårdagen och elpriserna bygger på dagliga medelvärden i öre per kWh. Historiken används sedan för att skapa små trendgrafer och göra korten mer beslutsstödjande än statiska siffror.',
       learnMoreLabel: 'frankfurter.dev / elprisetjustnu.se',
       learnMoreUrl: 'https://frankfurter.dev/docs/'
     },
     {
       title: 'Open-Meteo',
-      text: 'Väderduell med temperatur, vind, regn, UV och tider för sol.',
-      details: 'Väderkorten hämtar både nuvärden och dagsdata som max/min, nederbördsrisk, luftfuktighet och solens upp- och nedgång för att göra jämförelsen mer levande.',
+      text: 'Väderduell med temperatur, vind, regn, UV och soltider.',
+      details: 'Väderkorten hämtar både nuvärden och dagsdata som max/min, nederbördsrisk, luftfuktighet och solens upp- och nedgång. Det gör jämförelsen mer komplett och mer användbar än en enkel temperaturvisning.',
       learnMoreLabel: 'open-meteo.com/en/docs',
       learnMoreUrl: 'https://open-meteo.com/en/docs'
     },
     {
       title: 'Yahoo Finance + RSS',
-      text: 'Brenttrend och nyhetsflash.',
-      details: 'Brentoljan kommer från Yahoo Finances chart-data och nyhetsflashen sammanställs från RSS så att världen-sektionen känns mer som en levande överblick än en statisk lista.',
+      text: 'Brenttrend och nyhetsflash i samma överblick.',
+      details: 'Brentoljan kommer från Yahoo Finances chart-data och nyhetsflashen sammanställs från RSS-källor. Kombinationen gör att världen-sektionen känns mer som ett levande lägesrum än en statisk lista med separata datapunkter.',
       learnMoreLabel: 'finance chart / rss spec',
       learnMoreUrl: 'https://www.rssboard.org/rss-specification'
     },
     {
       title: 'AI-stöd i bygget',
       text: 'Codex och BMAD-artifakter hjälpte utvecklingsflödet.',
-      details: 'Själva appen kör inte AI i produktion, men i byggprocessen användes AI-stöd för kodning, tekniska artefakter och iterationer. Det märks främst i hur snabbt funktioner, polish och refaktorering kunnat göras i samma repo.',
+      details: 'Själva appen kör inte AI i produktion, men i byggprocessen användes AI-stöd för kodning, tekniska artefakter, UI-polish och iterationer. Det märks främst i hur snabbt funktioner och förbättringar kunnat drivas från idé till färdig detalj i samma repo.',
       learnMoreLabel: 'OpenAI platform docs',
       learnMoreUrl: 'https://platform.openai.com/docs'
     },
     {
       title: 'GitHub + Vercel',
       text: 'Versionshantering och deployflöde.',
-      details: 'GitHub håller kodhistoriken, Vercel bygger och deployar när rätt branch pushas. Det gör att frontend och serverfunktioner kan skickas tillsammans i samma deploy.',
+      details: 'GitHub håller kodhistoriken och fungerar som samlingspunkt för förändringar, medan Vercel bygger och deployar när rätt branch pushas. Det gör att frontend och serverfunktioner kan skickas tillsammans i samma releaseflöde.',
       learnMoreLabel: 'vercel.com/docs/git',
       learnMoreUrl: 'https://vercel.com/docs/git'
     }
@@ -1732,19 +1743,88 @@ function App() {
     display: 'grid',
     gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 210px))',
     justifyContent: 'center',
-    gap: '8px',
+    gap: '10px',
     margin: '0 auto 16px auto',
-    maxWidth: '500px',
+    maxWidth: '620px',
     alignItems: 'stretch'
   }
   const modalDetailGridStyle = {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(198px, 220px))',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))',
     justifyContent: 'center',
-    gap: '8px',
+    gap: '12px',
     margin: '0 auto 14px auto',
-    maxWidth: '500px',
+    maxWidth: '100%',
     alignItems: 'stretch'
+  }
+  const infoSheetActionButtonStyle = {
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: '10px 14px',
+    borderRadius: '999px',
+    border: '1px solid #d6e1ea',
+    background: '#fff',
+    color: '#1f4b78',
+    fontSize: '12px',
+    fontWeight: '700',
+    cursor: 'pointer',
+    textDecoration: 'none'
+  }
+  const infoSheetSurfaceStyle = {
+    background: '#fff',
+    borderRadius: '18px',
+    border: '1px solid #cfd9e2',
+    boxShadow: '0 18px 40px rgba(15, 23, 42, 0.22)',
+    padding: 'clamp(18px, 3vw, 28px)',
+    cursor: 'default',
+    minHeight: '100%',
+    boxSizing: 'border-box'
+  }
+  const infoSectionHeadingStyle = {
+    fontSize: '18px',
+    fontWeight: '700',
+    color: '#1f2937',
+    marginBottom: '6px',
+    textAlign: 'center'
+  }
+  const infoSectionIntroStyle = {
+    maxWidth: '680px',
+    margin: '0 auto 14px auto',
+    fontSize: '13px',
+    color: '#5f6b76',
+    lineHeight: '1.7',
+    textAlign: 'center'
+  }
+  const infoDetailCardTitleStyle = {
+    margin: '0',
+    fontWeight: '800',
+    fontSize: '14px',
+    lineHeight: '1.3',
+    textAlign: 'center'
+  }
+  const infoDetailCardTextStyle = {
+    margin: '0',
+    color: '#4b5563',
+    fontSize: '12px',
+    lineHeight: '1.68',
+    textAlign: 'center'
+  }
+  const infoDetailCardFrontStyle = {
+    background: 'linear-gradient(180deg, #f7fbff 0%, #eef4fa 100%)',
+    padding: '14px 14px 16px 14px',
+    borderRadius: '14px',
+    border: '1px solid #dbe5ee',
+    display: 'grid',
+    gap: '8px',
+    alignContent: 'start',
+    height: '100%',
+    textAlign: 'center',
+    boxSizing: 'border-box'
+  }
+  const infoDetailCardBackStyle = {
+    ...infoDetailCardFrontStyle,
+    background: 'linear-gradient(180deg, #ffffff 0%, #f5f9fd 100%)'
   }
   const sectionWrapperStyle = {
     width: '100%',
@@ -1891,7 +1971,7 @@ function App() {
         <div style={{ width: '100%', maxWidth: '620px', margin: '0 auto' }}>
         <div style={{ position: 'absolute', top: '15px', right: '15px' }}>
           <button
-            onClick={() => setShowInfo(!showInfo)}
+            onClick={openInfoPanel}
             style={{
               background: '#f3f7fb',
               border: '1px solid #a7b9c9',
@@ -1958,8 +2038,8 @@ function App() {
           padding: '12px',
           marginBottom: '20px'
         }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '10px' }}>
-            <label style={{
+          <div className="question-type-grid">
+            <label className="question-type-option" style={{
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -1992,9 +2072,9 @@ function App() {
                 }}
                 style={{ cursor: 'pointer', margin: '0' }}
               />
-              <span style={{ fontSize: '14px', fontWeight: '700' }}>Snabbfråga</span>
+              <span style={{ fontSize: '14px', fontWeight: '700' }}>Allmän fråga</span>
             </label>
-            <label style={{
+            <label className="question-type-option" style={{
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -2029,7 +2109,7 @@ function App() {
               />
               <span style={{ fontSize: '14px', fontWeight: '700' }}>Hälsa & BMI</span>
             </label>
-            <label style={{
+            <label className="question-type-option" style={{
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -2576,13 +2656,13 @@ function App() {
       </div>
 
       {showInfo && (
-        <div onClick={() => setShowInfo(false)} style={{
+        <div onClick={closeInfoPanel} style={{
           position: 'fixed',
           top: 0,
           left: 0,
           right: 0,
           bottom: 0,
-          background: 'rgba(0, 0, 0, 0.6)',
+          background: 'rgba(8, 15, 25, 0.62)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -2590,295 +2670,220 @@ function App() {
           cursor: 'pointer',
           padding: '20px'
         }}>
-          <div onClick={(e) => e.stopPropagation()} style={{
-            background: '#fff',
-            borderRadius: '12px',
-            border: '1px solid #a2a9b1',
-            boxShadow: '0 10px 30px rgba(0, 0, 0, 0.18)',
-            padding: 'clamp(18px, 3vw, 28px)',
-            maxWidth: '560px',
-            width: '100%',
-            maxHeight: '85vh',
-            overflowY: 'auto',
-            cursor: 'default'
-          }}>
-            <div style={{ textAlign: 'center', marginBottom: '20px' }}>
-              <p style={{
-                fontSize: '28px',
-                fontWeight: '700',
-                color: '#2f6fa3',
-                margin: '0 0 10px 0'
-              }}>Maxipedia</p>
-              <p style={{
-                fontSize: '16px',
-                fontWeight: '600',
-                color: '#1f4b78',
-                margin: '0'
-              }}>Snabbfrågor, film, el, världskoll och nyhetsflash i ett kort</p>
-              <p style={{
-                fontSize: '13px',
-                color: '#888',
-                marginTop: '8px',
-                fontStyle: 'italic'
-              }}>Byggd för snabba vardagsbeslut och kul jämförelser</p>
-            </div>
+          <div
+            className={`info-sheet${showInfoBack ? ' is-flipped' : ''}`}
+            onClick={(e) => e.stopPropagation()}
+            style={{ width: '100%', maxWidth: '880px', height: 'min(86vh, 920px)', cursor: 'default' }}
+          >
+            <div className="info-sheet-inner">
+              <div className="info-sheet-face info-sheet-front">
+                <div style={{ ...infoSheetSurfaceStyle, background: 'linear-gradient(180deg, #ffffff 0%, #f7fbff 100%)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', marginBottom: '20px' }}>
+                    <button onClick={closeInfoPanel} style={infoSheetActionButtonStyle}>Stäng</button>
+                    <button onClick={() => setShowInfoBack(true)} style={{ ...infoSheetActionButtonStyle, background: '#1f4b78', color: '#fff', borderColor: '#1f4b78' }}>
+                      Vänd till tekniköversikt
+                    </button>
+                  </div>
 
-            <div style={{
-              borderTop: '2px solid #f0f0f0',
-              paddingTop: '18px'
-            }}>
-              <div style={modalOverviewGridStyle}>
-                {infoHighlights.map((item) => (
-                  <div key={item.title} style={{
-                    background: 'linear-gradient(180deg, #f7fbff 0%, #eef4fa 100%)',
-                    border: '1px solid #dbe5ee',
-                    borderRadius: '14px',
-                    padding: '11px 12px 12px 12px',
-                    textAlign: 'center',
-                    minHeight: '104px',
-                    display: 'grid',
-                    gap: '4px',
-                    alignContent: 'start',
-                    boxSizing: 'border-box'
-                  }}>
-                    <p style={{
-                      margin: '0',
-                      fontSize: '10px',
-                      fontWeight: '800',
-                      color: '#64748b',
-                      letterSpacing: '0.08em',
-                      textTransform: 'uppercase'
-                    }}>
-                      {item.meta}
+                  <div style={{ textAlign: 'center', marginBottom: '24px' }}>
+                    <p style={{ fontSize: '30px', fontWeight: '700', color: '#2f6fa3', margin: '0 0 10px 0' }}>Maxipedia</p>
+                    <p style={{ fontSize: '17px', fontWeight: '700', color: '#1f4b78', margin: '0 0 8px 0' }}>
+                      Allmänna frågor, film, elpriser och världskoll i ett samlat gränssnitt
                     </p>
-                    <p style={{ margin: '0 0 6px 0', fontSize: '12px', fontWeight: '800', color: '#2f6fa3', letterSpacing: '0.04em', textTransform: 'uppercase' }}>
-                      {item.title}
-                    </p>
-                    <p style={{ margin: '0', color: '#475569', fontSize: '12px', lineHeight: '1.55' }}>
-                      {item.text}
+                    <p style={{ maxWidth: '620px', margin: '0 auto', fontSize: '14px', color: '#5b6571', lineHeight: '1.65' }}>
+                      Här får du en snabb översikt över hur appen är uppbyggd. Vänder du panelen får du den tekniska sidan med mer förklaring kring arkitektur, datakällor, UI-mönster och utvecklingsflöde.
                     </p>
                   </div>
-                ))}
-              </div>
 
-              <h3 style={{
-                fontSize: '18px',
-                fontWeight: '700',
-                color: '#333',
-                marginBottom: '9px',
-                textAlign: 'center'
-              }}>Visuell teknikstack</h3>
-
-              <div style={modalDetailGridStyle}>
-                {techHighlights.map((item) => (
-                  <FlipCard
-                    key={item.title}
-                    minHeight={110}
-                    flipped={Boolean(flippedCards[`tech-${item.title}`])}
-                    onToggle={() => toggleCardFlip(`tech-${item.title}`)}
-                    front={(
-                      <div style={{
-                        background: '#f4f7fb',
-                        padding: '9px 10px',
-                        borderRadius: '12px',
-                        borderLeft: '4px solid #2f6fa3',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: '4px',
-                        textAlign: 'left',
-                        height: '100%',
-                        boxSizing: 'border-box'
-                      }}>
-                        <div>
-                          <p style={{ margin: '0 0 4px 0', fontWeight: '700', color: '#2f6fa3', fontSize: '13px', lineHeight: '1.3' }}>{item.title}</p>
-                          <p style={{ margin: '0', color: '#555', fontSize: '11px', lineHeight: '1.38' }}>
-                            {item.text}
-                          </p>
-                        </div>
-                      </div>
-                    )}
-                    back={(
-                      <div style={{
-                        background: '#f4f7fb',
-                        padding: '9px 10px',
-                        borderRadius: '12px',
-                        borderLeft: '4px solid #2f6fa3',
+                  <div style={modalOverviewGridStyle}>
+                    {infoHighlights.map((item) => (
+                      <div key={item.title} style={{
+                        background: 'linear-gradient(180deg, #f7fbff 0%, #eef4fa 100%)',
+                        border: '1px solid #dbe5ee',
+                        borderRadius: '14px',
+                        padding: '14px 14px 16px 14px',
+                        textAlign: 'center',
+                        minHeight: '126px',
                         display: 'grid',
                         gap: '6px',
                         alignContent: 'start',
-                        height: '100%',
-                        textAlign: 'left',
                         boxSizing: 'border-box'
                       }}>
-                        <div>
-                          <p style={{ margin: '0 0 4px 0', fontWeight: '700', color: '#2f6fa3', fontSize: '13px', lineHeight: '1.3' }}>{item.title}</p>
-                          <p style={{ margin: '0', color: '#555', fontSize: '11px', lineHeight: '1.38' }}>{item.details}</p>
-                        </div>
-                        <a
-                          href={item.learnMoreUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          onClick={(event) => event.stopPropagation()}
-                          style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            padding: '7px 9px',
-                            borderRadius: '999px',
-                            background: '#fff',
-                            color: '#2f6fa3',
-                            textDecoration: 'none',
-                            fontSize: '10px',
-                            fontWeight: '700'
-                          }}
-                        >
-                          Läs vidare: {item.learnMoreLabel}
-                        </a>
+                        <p style={{
+                          margin: '0',
+                          fontSize: '10px',
+                          fontWeight: '800',
+                          color: '#64748b',
+                          letterSpacing: '0.08em',
+                          textTransform: 'uppercase'
+                        }}>
+                          {item.meta}
+                        </p>
+                        <p style={{ margin: '0', fontSize: '13px', fontWeight: '800', color: '#2f6fa3', letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+                          {item.title}
+                        </p>
+                        <p style={{ margin: '0', color: '#475569', fontSize: '12px', lineHeight: '1.65' }}>
+                          {item.text}
+                        </p>
                       </div>
-                    )}
-                  />
-                ))}
+                    ))}
+                  </div>
+
+                </div>
               </div>
 
-              <h3 style={{
-                fontSize: '18px',
-                fontWeight: '700',
-                color: '#333',
-                marginBottom: '9px',
-                textAlign: 'center'
-              }}>Designmönster i appen</h3>
+              <div className="info-sheet-face info-sheet-back">
+                <div style={infoSheetSurfaceStyle}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', marginBottom: '18px' }}>
+                    <button onClick={() => setShowInfoBack(false)} style={infoSheetActionButtonStyle}>Tillbaka till översikt</button>
+                    <button onClick={closeInfoPanel} style={infoSheetActionButtonStyle}>Stäng</button>
+                  </div>
 
-              <div style={modalDetailGridStyle}>
-                {patternHighlights.map((item) => (
-                  <FlipCard
-                    key={item.title}
-                    minHeight={110}
-                    flipped={Boolean(flippedCards[`pattern-${item.title}`])}
-                    onToggle={() => toggleCardFlip(`pattern-${item.title}`)}
-                    front={(
-                      <div style={{
-                        background: '#f8fbff',
-                        padding: '9px 10px',
-                        borderRadius: '12px',
-                        borderLeft: '4px solid #7aa5c7',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: '4px',
-                        textAlign: 'left',
-                        height: '100%',
-                        boxSizing: 'border-box'
-                      }}>
-                        <div>
-                          <p style={{ margin: '0 0 4px 0', fontWeight: '700', color: '#1f4b78', fontSize: '13px', lineHeight: '1.3' }}>{item.title}</p>
-                          <p style={{ margin: '0', color: '#555', fontSize: '11px', lineHeight: '1.38' }}>{item.text}</p>
-                        </div>
-                      </div>
-                    )}
-                    back={(
-                      <div style={{
-                        background: '#f8fbff',
-                        padding: '9px 10px',
-                        borderRadius: '12px',
-                        borderLeft: '4px solid #7aa5c7',
+                  <div style={{ textAlign: 'center', marginBottom: '22px' }}>
+                    <p style={{ fontSize: '28px', fontWeight: '700', color: '#2f6fa3', margin: '0 0 8px 0' }}>Tekniköversikt</p>
+                    <p style={{ maxWidth: '680px', margin: '0 auto', fontSize: '14px', color: '#55606c', lineHeight: '1.7' }}>
+                      Panelen nedan visar de viktigaste byggstenarna bakom Maxipedia. Varje kort berättar både vad tekniken gör i appen och varför just den delen spelar roll för upplevelsen.
+                    </p>
+                  </div>
+
+                  <div style={{ ...modalOverviewGridStyle, marginBottom: '18px' }}>
+                    {infoHighlights.map((item) => (
+                      <div key={`tech-overview-${item.title}`} style={{
+                        background: 'linear-gradient(180deg, #f7fbff 0%, #eef4fa 100%)',
+                        border: '1px solid #dbe5ee',
+                        borderRadius: '14px',
+                        padding: '14px 14px 16px 14px',
+                        textAlign: 'center',
+                        minHeight: '132px',
                         display: 'grid',
                         gap: '6px',
                         alignContent: 'start',
-                        height: '100%',
-                        textAlign: 'left',
                         boxSizing: 'border-box'
                       }}>
-                        <p style={{ margin: '0', fontWeight: '700', color: '#1f4b78', fontSize: '13px', lineHeight: '1.3' }}>{item.title}</p>
-                        <p style={{ margin: '0', color: '#555', fontSize: '11px', lineHeight: '1.38' }}>{item.details}</p>
+                        <p style={{
+                          margin: '0',
+                          fontSize: '10px',
+                          fontWeight: '800',
+                          color: '#64748b',
+                          letterSpacing: '0.08em',
+                          textTransform: 'uppercase'
+                        }}>
+                          {item.meta}
+                        </p>
+                        <p style={{ margin: '0', fontSize: '13px', fontWeight: '800', color: '#2f6fa3', letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+                          {item.title}
+                        </p>
+                        <p style={{ margin: '0', color: '#475569', fontSize: '12px', lineHeight: '1.65' }}>
+                          {item.text}
+                        </p>
                       </div>
-                    )}
-                  />
-                ))}
-              </div>
+                    ))}
+                  </div>
 
-              <h3 style={{
-                fontSize: '18px',
-                fontWeight: '700',
-                color: '#333',
-                marginBottom: '9px',
-                textAlign: 'center'
-              }}>Verktyg, AI och utvecklingsmiljö</h3>
+                  <h3 style={infoSectionHeadingStyle}>Visuell teknikstack</h3>
+                  <p style={infoSectionIntroStyle}>
+                    Här syns de viktigaste tekniska valen bakom appen: hur gränssnittet renderas, hur data hämtas, varför vissa delar går via serverfunktioner och hur olika externa källor binds ihop till en enda startsida.
+                  </p>
+                  <div style={modalDetailGridStyle}>
+                    {techHighlights.map((item) => (
+                      <FlipCard
+                        key={item.title}
+                        minHeight={214}
+                        flipped={Boolean(flippedCards[`tech-${item.title}`])}
+                        onToggle={() => toggleCardFlip(`tech-${item.title}`)}
+                        front={(
+                          <div style={{ ...infoDetailCardFrontStyle, borderTop: '4px solid #2f6fa3' }}>
+                            <p style={{ ...infoDetailCardTitleStyle, color: '#2f6fa3' }}>{item.title}</p>
+                            <p style={infoDetailCardTextStyle}>{item.text}</p>
+                            <p style={{ ...infoDetailCardTextStyle, color: '#687480', fontSize: '11px' }}>
+                              Tryck för fördjupning och källänk
+                            </p>
+                          </div>
+                        )}
+                        back={(
+                          <div style={{ ...infoDetailCardBackStyle, borderTop: '4px solid #2f6fa3' }}>
+                            <p style={{ ...infoDetailCardTitleStyle, color: '#2f6fa3' }}>{item.title}</p>
+                            <p style={infoDetailCardTextStyle}>{item.text}</p>
+                            <p style={{ ...infoDetailCardTextStyle, lineHeight: '1.75' }}>{item.details}</p>
+                            <a
+                              href={item.learnMoreUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              onClick={(event) => event.stopPropagation()}
+                              style={{ ...infoSheetActionButtonStyle, justifySelf: 'center' }}
+                            >
+                              Läs vidare: {item.learnMoreLabel}
+                            </a>
+                          </div>
+                        )}
+                      />
+                    ))}
+                  </div>
 
-              <div style={modalDetailGridStyle}>
-                {toolingHighlights.map((item) => (
-                  <FlipCard
-                    key={item.title}
-                    minHeight={110}
-                    flipped={Boolean(flippedCards[`tool-${item.title}`])}
-                    onToggle={() => toggleCardFlip(`tool-${item.title}`)}
-                    front={(
-                      <div style={{
-                        background: '#f4f7fb',
-                        padding: '9px 10px',
-                        borderRadius: '12px',
-                        borderLeft: '4px solid #2f6fa3',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: '4px',
-                        textAlign: 'left',
-                        height: '100%',
-                        boxSizing: 'border-box'
-                      }}>
-                        <div>
-                          <p style={{ margin: '0 0 4px 0', fontWeight: '700', color: '#2f6fa3', fontSize: '13px', lineHeight: '1.3' }}>{item.title}</p>
-                          <p style={{ margin: '0', color: '#555', fontSize: '11px', lineHeight: '1.38' }}>{item.text}</p>
-                        </div>
-                      </div>
-                    )}
-                    back={(
-                      <div style={{
-                        background: '#f4f7fb',
-                        padding: '9px 10px',
-                        borderRadius: '12px',
-                        borderLeft: '4px solid #2f6fa3',
-                        display: 'grid',
-                        gap: '6px',
-                        alignContent: 'start',
-                        height: '100%',
-                        textAlign: 'left',
-                        boxSizing: 'border-box'
-                      }}>
-                        <div>
-                          <p style={{ margin: '0 0 4px 0', fontWeight: '700', color: '#2f6fa3', fontSize: '13px', lineHeight: '1.3' }}>{item.title}</p>
-                          <p style={{ margin: '0', color: '#555', fontSize: '11px', lineHeight: '1.38' }}>{item.details}</p>
-                        </div>
-                      </div>
-                    )}
-                  />
-                ))}
+                  <h3 style={infoSectionHeadingStyle}>Designmönster i appen</h3>
+                  <p style={infoSectionIntroStyle}>
+                    Utöver teknikvalen finns några tydliga produktmönster i gränssnittet. De gör att appen känns snabb, begriplig och lätt att använda trots att flera olika funktioner samsas på samma yta.
+                  </p>
+                  <div style={modalDetailGridStyle}>
+                    {patternHighlights.map((item) => (
+                      <FlipCard
+                        key={item.title}
+                        minHeight={198}
+                        flipped={Boolean(flippedCards[`pattern-${item.title}`])}
+                        onToggle={() => toggleCardFlip(`pattern-${item.title}`)}
+                        front={(
+                          <div style={{ ...infoDetailCardFrontStyle, borderTop: '4px solid #7aa5c7' }}>
+                            <p style={{ ...infoDetailCardTitleStyle, color: '#1f4b78' }}>{item.title}</p>
+                            <p style={infoDetailCardTextStyle}>{item.text}</p>
+                            <p style={{ ...infoDetailCardTextStyle, color: '#687480', fontSize: '11px' }}>
+                              Tryck för mer resonemang
+                            </p>
+                          </div>
+                        )}
+                        back={(
+                          <div style={{ ...infoDetailCardBackStyle, borderTop: '4px solid #7aa5c7' }}>
+                            <p style={{ ...infoDetailCardTitleStyle, color: '#1f4b78' }}>{item.title}</p>
+                            <p style={infoDetailCardTextStyle}>{item.text}</p>
+                            <p style={{ ...infoDetailCardTextStyle, lineHeight: '1.75' }}>{item.details}</p>
+                          </div>
+                        )}
+                      />
+                    ))}
+                  </div>
+
+                  <h3 style={infoSectionHeadingStyle}>Verktyg, AI och utvecklingsmiljö</h3>
+                  <p style={infoSectionIntroStyle}>
+                    Den här delen handlar mer om arbetsflödet runt koden än om själva runtime-arkitekturen. Här syns vilka verktyg som användes för att skriva, strukturera, kvalitetssäkra och deploya appen.
+                  </p>
+                  <div style={{ ...modalDetailGridStyle, marginBottom: '0' }}>
+                    {toolingHighlights.map((item) => (
+                      <FlipCard
+                        key={item.title}
+                        minHeight={198}
+                        flipped={Boolean(flippedCards[`tool-${item.title}`])}
+                        onToggle={() => toggleCardFlip(`tool-${item.title}`)}
+                        front={(
+                          <div style={{ ...infoDetailCardFrontStyle, borderTop: '4px solid #2f6fa3' }}>
+                            <p style={{ ...infoDetailCardTitleStyle, color: '#2f6fa3' }}>{item.title}</p>
+                            <p style={infoDetailCardTextStyle}>{item.text}</p>
+                            <p style={{ ...infoDetailCardTextStyle, color: '#687480', fontSize: '11px' }}>
+                              Tryck för kontext och roll i flödet
+                            </p>
+                          </div>
+                        )}
+                        back={(
+                          <div style={{ ...infoDetailCardBackStyle, borderTop: '4px solid #2f6fa3' }}>
+                            <p style={{ ...infoDetailCardTitleStyle, color: '#2f6fa3' }}>{item.title}</p>
+                            <p style={infoDetailCardTextStyle}>{item.text}</p>
+                            <p style={{ ...infoDetailCardTextStyle, lineHeight: '1.75' }}>{item.details}</p>
+                          </div>
+                        )}
+                      />
+                    ))}
+                  </div>
+                </div>
               </div>
             </div>
-
-            <button
-              onClick={() => setShowInfo(false)}
-              style={{
-                width: '100%',
-                marginTop: '25px',
-                padding: '12px 24px',
-                fontSize: '14px',
-                fontWeight: '600',
-                color: 'white',
-                background: 'linear-gradient(180deg, #447ff5 0%, #3366cc 100%)',
-                border: 'none',
-                borderRadius: '12px',
-                cursor: 'pointer',
-                transition: 'all 0.3s ease'
-              }}
-              onMouseOver={(e) => {
-                e.target.style.transform = 'translateY(-2px)'
-                e.target.style.boxShadow = '0 6px 20px rgba(51, 102, 204, 0.28)'
-              }}
-              onMouseOut={(e) => {
-                e.target.style.transform = 'translateY(0)'
-                e.target.style.boxShadow = 'none'
-              }}
-            >
-              Stäng
-            </button>
           </div>
         </div>
       )}

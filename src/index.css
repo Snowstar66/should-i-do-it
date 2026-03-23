@@ -188,6 +188,56 @@ body {
   transform: rotateY(0deg);
 }
 
+.info-sheet {
+  perspective: 1800px;
+}
+
+.info-sheet-inner {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transform-style: preserve-3d;
+  transition: transform 0.7s ease;
+}
+
+.info-sheet.is-flipped .info-sheet-inner {
+  transform: rotateY(180deg);
+}
+
+.info-sheet-face {
+  position: absolute;
+  inset: 0;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  overflow-y: auto;
+  border-radius: 18px;
+}
+
+.info-sheet-back {
+  transform: rotateY(180deg);
+}
+
+.question-type-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.question-type-option {
+  min-width: 0;
+}
+
+@media (max-width: 560px) {
+  .question-type-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .question-type-option {
+    justify-content: flex-start !important;
+    text-align: left;
+  }
+}
+
 h1,
 h2 {
   font-family: var(--heading);
