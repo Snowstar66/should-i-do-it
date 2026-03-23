@@ -2719,10 +2719,13 @@ function App() {
           <div
             className={`info-sheet${showInfoBack ? ' is-flipped' : ''}`}
             onClick={(e) => e.stopPropagation()}
+            onTouchStart={(e) => e.stopPropagation()}
+            onTouchMove={(e) => e.stopPropagation()}
             style={{ width: '100%', maxWidth: '880px', height: 'min(86svh, 920px)', minHeight: '0', cursor: 'default' }}
           >
             <div className="info-sheet-inner">
               <div className="info-sheet-face info-sheet-front">
+                <div className="info-sheet-scroll">
                 <div style={{ ...infoSheetSurfaceStyle, background: 'linear-gradient(180deg, #ffffff 0%, #f7fbff 100%)' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap', marginBottom: '20px' }}>
                     <button onClick={closeInfoPanel} style={infoSheetActionButtonStyle}>Stäng</button>
@@ -2775,9 +2778,11 @@ function App() {
                   </div>
 
                 </div>
+                </div>
               </div>
 
               <div className="info-sheet-face info-sheet-back">
+                <div className="info-sheet-scroll">
                 <div style={infoSheetSurfaceStyle}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', marginBottom: '18px' }}>
                     <button onClick={() => setShowInfoBack(false)} style={infoSheetActionButtonStyle}>Tillbaka till översikt</button>
@@ -2926,6 +2931,7 @@ function App() {
                       />
                     ))}
                   </div>
+                </div>
                 </div>
               </div>
             </div>
