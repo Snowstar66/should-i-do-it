@@ -1810,6 +1810,52 @@ function App() {
     lineHeight: '1.68',
     textAlign: 'center'
   }
+  const infoFrontGridStyle = {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
+    gap: '14px',
+    marginBottom: '16px'
+  }
+  const infoFrontPanelStyle = {
+    background: 'linear-gradient(180deg, #f7fbff 0%, #eef4fa 100%)',
+    border: '1px solid #dbe5ee',
+    borderRadius: '16px',
+    padding: '18px',
+    textAlign: 'center'
+  }
+  const infoFrontPanelTitleStyle = {
+    margin: '0 0 8px 0',
+    fontSize: '15px',
+    fontWeight: '800',
+    color: '#1f4b78',
+    textAlign: 'center'
+  }
+  const infoFrontPanelTextStyle = {
+    margin: '0',
+    fontSize: '13px',
+    color: '#52606d',
+    lineHeight: '1.7',
+    textAlign: 'center'
+  }
+  const infoFrontPillRowStyle = {
+    display: 'flex',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: '8px',
+    margin: '0 0 18px 0'
+  }
+  const infoFrontPillStyle = {
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: '8px 12px',
+    borderRadius: '999px',
+    background: '#ffffff',
+    border: '1px solid #dbe5ee',
+    color: '#2f6fa3',
+    fontSize: '12px',
+    fontWeight: '700'
+  }
   const infoDetailCardFrontStyle = {
     background: 'linear-gradient(180deg, #f7fbff 0%, #eef4fa 100%)',
     padding: '14px 14px 16px 14px',
@@ -2673,58 +2719,57 @@ function App() {
           <div
             className={`info-sheet${showInfoBack ? ' is-flipped' : ''}`}
             onClick={(e) => e.stopPropagation()}
-            style={{ width: '100%', maxWidth: '880px', height: 'min(86vh, 920px)', cursor: 'default' }}
+            style={{ width: '100%', maxWidth: '880px', height: 'min(86svh, 920px)', minHeight: '0', cursor: 'default' }}
           >
             <div className="info-sheet-inner">
               <div className="info-sheet-face info-sheet-front">
                 <div style={{ ...infoSheetSurfaceStyle, background: 'linear-gradient(180deg, #ffffff 0%, #f7fbff 100%)' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', marginBottom: '20px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap', marginBottom: '20px' }}>
                     <button onClick={closeInfoPanel} style={infoSheetActionButtonStyle}>Stäng</button>
                     <button onClick={() => setShowInfoBack(true)} style={{ ...infoSheetActionButtonStyle, background: '#1f4b78', color: '#fff', borderColor: '#1f4b78' }}>
                       Vänd till tekniköversikt
                     </button>
                   </div>
 
-                  <div style={{ textAlign: 'center', marginBottom: '24px' }}>
+                  <div style={{ textAlign: 'center', marginBottom: '18px' }}>
                     <p style={{ fontSize: '30px', fontWeight: '700', color: '#2f6fa3', margin: '0 0 10px 0' }}>Maxipedia</p>
                     <p style={{ fontSize: '17px', fontWeight: '700', color: '#1f4b78', margin: '0 0 8px 0' }}>
                       Allmänna frågor, film, elpriser och världskoll i ett samlat gränssnitt
                     </p>
                     <p style={{ maxWidth: '620px', margin: '0 auto', fontSize: '14px', color: '#5b6571', lineHeight: '1.65' }}>
-                      Här får du en snabb översikt över hur appen är uppbyggd. Vänder du panelen får du den tekniska sidan med mer förklaring kring arkitektur, datakällor, UI-mönster och utvecklingsflöde.
+                      Maxipedia samlar flera vardagsfunktioner i en enda vy. Framsidan här ger en kort produktöverblick, medan baksidan går djupare in i hur lösningen är byggd.
                     </p>
                   </div>
 
-                  <div style={modalOverviewGridStyle}>
+                  <div style={infoFrontPillRowStyle}>
+                    {['Allmän fråga', 'Hälsa & BMI', 'Film', 'Elpriser', 'Väderduell', 'Världskoll'].map((item) => (
+                      <span key={item} style={infoFrontPillStyle}>{item}</span>
+                    ))}
+                  </div>
+
+                  <div style={infoFrontGridStyle}>
+                    <div style={infoFrontPanelStyle}>
+                      <p style={infoFrontPanelTitleStyle}>Vad du kan göra här</p>
+                      <p style={infoFrontPanelTextStyle}>
+                        Ställa allmänna frågor, söka film med betyg och streaming, räkna BMI och följa elpris, marknad, väder och nyhetsflash utan att lämna startsidan.
+                      </p>
+                    </div>
+                    <div style={infoFrontPanelStyle}>
+                      <p style={infoFrontPanelTitleStyle}>Hur upplevelsen är upplagd</p>
+                      <p style={infoFrontPanelTextStyle}>
+                        Informationen visas i kort med snabb överblick först och mer detalj vid interaktion. Det gör sidan lätt att skanna även när flera datakällor samsas samtidigt.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div style={infoFrontGridStyle}>
                     {infoHighlights.map((item) => (
-                      <div key={item.title} style={{
-                        background: 'linear-gradient(180deg, #f7fbff 0%, #eef4fa 100%)',
-                        border: '1px solid #dbe5ee',
-                        borderRadius: '14px',
-                        padding: '14px 14px 16px 14px',
-                        textAlign: 'center',
-                        minHeight: '126px',
-                        display: 'grid',
-                        gap: '6px',
-                        alignContent: 'start',
-                        boxSizing: 'border-box'
-                      }}>
-                        <p style={{
-                          margin: '0',
-                          fontSize: '10px',
-                          fontWeight: '800',
-                          color: '#64748b',
-                          letterSpacing: '0.08em',
-                          textTransform: 'uppercase'
-                        }}>
+                      <div key={item.title} style={{ ...infoFrontPanelStyle, padding: '16px' }}>
+                        <p style={{ margin: '0 0 4px 0', fontSize: '10px', fontWeight: '800', color: '#64748b', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
                           {item.meta}
                         </p>
-                        <p style={{ margin: '0', fontSize: '13px', fontWeight: '800', color: '#2f6fa3', letterSpacing: '0.04em', textTransform: 'uppercase' }}>
-                          {item.title}
-                        </p>
-                        <p style={{ margin: '0', color: '#475569', fontSize: '12px', lineHeight: '1.65' }}>
-                          {item.text}
-                        </p>
+                        <p style={{ ...infoFrontPanelTitleStyle, marginBottom: '6px' }}>{item.title}</p>
+                        <p style={infoFrontPanelTextStyle}>{item.text}</p>
                       </div>
                     ))}
                   </div>
